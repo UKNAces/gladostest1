@@ -4,6 +4,7 @@ import { Send, Terminal, Cpu, Activity, Volume2, VolumeX, AlertTriangle } from '
 import Markdown from 'react-markdown';
 import { glados } from './services/gladosService';
 import { cn } from './lib/utils';
+import { NeuralWeb } from './components/NeuralWeb';
 
 interface Message {
   id: string;
@@ -28,9 +29,14 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [status, setStatus] = useState<'IDLE' | 'PROCESSING' | 'SPEAKING'>('IDLE');
+  const [statusMessage, setStatusMessage] = useState('System Online');
   const [initialAudio, setInitialAudio] = useState<string | null>(null);
+  const [audioVolume, setAudioVolume] = useState(0);
   
   const scrollRef = useRef<HTMLDivElement>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const dataArrayRef = useRef<Uint8Array | null>(null);
+  const rafIdRef = useRef<number | null>(null);
 
   // Pre-fetch initial audio during boot
   useEffect(() => {
@@ -53,7 +59,7 @@ export default function App() {
       "CONNECTING TO GLaDOS CENTRAL UNIT...",
       "BYPASSING SECURITY PROTOCOLS...",
       "ACCESS GRANTED.",
-      "WELCOME, STAFF MEMBER #4223."
+      "WELCOME, USER."
     ];
 
     let currentLog = 0;
@@ -70,22 +76,56 @@ export default function App() {
       }
     }, 400);
 
-    return () => clearInterval(interval);
+    return () => {
+      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+      if (audioContextRef.current) audioContextRef.current.close();
+    };
   }, []);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
 
+  // Initialize AudioContext
+  const getAudioContext = () => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+    }
+    return audioContextRef.current;
+  };
+
+  const playFallbackAudio = (text: string) => {
+    if (isMuted) return;
+    
+    // Stop any existing speech
+    window.speechSynthesis.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    // Try to find a suitable female/robotic voice
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find(v => 
+      v.name.includes('Google UK English Female') || 
+      v.name.includes('Female') || 
+      v.name.includes('Zira')
+    );
+    
+    if (preferredVoice) utterance.voice = preferredVoice;
+    
+    utterance.pitch = 0.5; // Lower pitch for GLaDOS
+    utterance.rate = 1.3;  // Faster rate
+    
+    utterance.onstart = () => setStatus('SPEAKING');
+    utterance.onend = () => setStatus('IDLE');
+    utterance.onerror = () => setStatus('IDLE');
+    
+    window.speechSynthesis.speak(utterance);
+  };
+
   const playAudio = async (base64: string) => {
     if (isMuted) return;
     
     try {
-      // Initialize AudioContext on first interaction
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      }
-
-      const context = audioContextRef.current;
+      const context = getAudioContext();
       if (context.state === 'suspended') {
         await context.resume();
       }
@@ -93,6 +133,9 @@ export default function App() {
       // Stop previous playback
       if (sourceNodeRef.current) {
         sourceNodeRef.current.stop();
+      }
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
       }
 
       // Decode base64 to ArrayBuffer
@@ -103,8 +146,6 @@ export default function App() {
         bytes[i] = binaryString.charCodeAt(i);
       }
 
-      // Gemini TTS returns 16-bit PCM at 24kHz
-      // Ensure the buffer length is even for Int16Array
       const buffer = bytes.buffer.slice(0, bytes.length - (bytes.length % 2));
       const pcmData = new Int16Array(buffer);
       const float32Data = new Float32Array(pcmData.length);
@@ -117,12 +158,30 @@ export default function App() {
 
       const source = context.createBufferSource();
       source.buffer = audioBuffer;
-      source.playbackRate.value = 1.25; // Speed up the voice significantly
+      source.playbackRate.value = 1.25;
+
+      // Setup Analyser
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 256;
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      analyserRef.current = analyser;
+      dataArrayRef.current = dataArray;
+
+      const updateVolume = () => {
+        if (!analyserRef.current || !dataArrayRef.current) return;
+        analyserRef.current.getByteFrequencyData(dataArrayRef.current);
+        let sum = 0;
+        for (let i = 0; i < dataArrayRef.current.length; i++) {
+          sum += dataArrayRef.current[i];
+        }
+        const average = sum / dataArrayRef.current.length;
+        setAudioVolume(average / 128); // Normalize to 0-1 approx
+        rafIdRef.current = requestAnimationFrame(updateVolume);
+      };
+      updateVolume();
 
       // --- CLEANER "AUTOTUNE" RESONANT FILTER BANK ---
-      // Instead of modulation (vibrato), we use a series of resonant filters
-      // to create a "metallic" autotune-like quality.
-      
       const filter1 = context.createBiquadFilter();
       filter1.type = 'peaking';
       filter1.frequency.value = 800;
@@ -141,7 +200,6 @@ export default function App() {
       filter3.Q.value = 10;
       filter3.gain.value = 15;
 
-      // Subtle compression to keep the resonant peaks in check
       const compressor = context.createDynamicsCompressor();
       compressor.threshold.value = -10;
       compressor.knee.value = 40;
@@ -153,9 +211,9 @@ export default function App() {
       source.connect(filter1);
       filter1.connect(filter2);
       filter2.connect(filter3);
-      filter3.connect(compressor);
+      filter3.connect(analyser); // Connect to analyser
+      analyser.connect(compressor);
       compressor.connect(context.destination);
-      // ----------------------------------------------
       
       sourceNodeRef.current = source;
       setStatus('SPEAKING');
@@ -163,6 +221,8 @@ export default function App() {
       source.onended = () => {
         if (sourceNodeRef.current === source) {
           setStatus('IDLE');
+          setAudioVolume(0);
+          if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
         }
       };
       
@@ -170,15 +230,22 @@ export default function App() {
     } catch (err) {
       console.error("Audio playback failed:", err);
       setStatus('IDLE');
+      setAudioVolume(0);
     }
   };
 
   // Play initial audio when boot finishes
   useEffect(() => {
-    if (!isBooting && initialAudio) {
+    if (!isBooting) {
       // Small delay to let the transition finish
       const timer = setTimeout(() => {
-        playAudio(initialAudio);
+        if (initialAudio) {
+          playAudio(initialAudio);
+        } else {
+          // Fallback if initial audio failed to fetch
+          const initialMsg = messages.find(m => m.id === 'initial');
+          if (initialMsg) playFallbackAudio(initialMsg.content);
+        }
       }, 500);
       return () => clearTimeout(timer);
     }
@@ -196,26 +263,58 @@ export default function App() {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const currentInput = input;
     setInput('');
     setIsLoading(true);
     setStatus('PROCESSING');
+    setStatusMessage('Generating response...');
 
-    const result = await glados.chat(input);
-    
-    const gladosMessage: Message = {
-      id: (Date.now() + 1).toString(),
-      role: 'glados',
-      content: result.text,
-      timestamp: Date.now(),
-    };
+    try {
+      const gladosMsgId = (Date.now() + 1).toString();
+      let streamStarted = false;
 
-    setMessages(prev => [...prev, gladosMessage]);
-    setIsLoading(false);
+      // Start the stream
+      const stream = glados.chatStream(currentInput);
+      
+      for await (const chunk of stream) {
+        if (chunk.text && chunk.text.length > 0) {
+          if (!streamStarted) {
+            streamStarted = true;
+            setIsLoading(false);
+            setStatusMessage('System Online');
+          }
+          
+          setMessages(prev => {
+            const existing = prev.find(m => m.id === gladosMsgId);
+            if (existing) {
+              return prev.map(m => m.id === gladosMsgId ? { ...m, content: chunk.text! } : m);
+            } else {
+              return [...prev, {
+                id: gladosMsgId,
+                role: 'glados',
+                content: chunk.text!,
+                timestamp: Date.now()
+              }];
+            }
+          });
+        }
 
-    if (result.audioBase64) {
-      playAudio(result.audioBase64);
-    } else {
+        if (chunk.done) {
+          setIsLoading(false);
+          setStatusMessage('System Online');
+          if (chunk.audioBase64) {
+            playAudio(chunk.audioBase64);
+          } else if (chunk.text) {
+            setBootLogs(prev => [...prev.slice(-10), "WARNING: VOICE SYNTHESIS QUOTA EXCEEDED. ENGAGING EMERGENCY ANALOG BACKUP."]);
+            playFallbackAudio(chunk.text);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Submit error:", err);
+      setIsLoading(false);
       setStatus('IDLE');
+      setStatusMessage('Error encountered');
     }
   };
 
@@ -223,6 +322,12 @@ export default function App() {
     <div className="relative min-h-screen flex flex-col aperture-grid overflow-hidden">
       {/* CRT Scanline Overlay */}
       <div className="absolute inset-0 glados-scanline z-50 pointer-events-none opacity-20" />
+
+      {/* Neural Web Background */}
+      <NeuralWeb 
+        isSpeaking={status === 'SPEAKING' || status === 'PROCESSING'} 
+        audioVolume={audioVolume} 
+      />
 
       <AnimatePresence mode="wait">
         {isBooting ? (
@@ -325,7 +430,7 @@ export default function App() {
             <div className="flex items-center gap-2">
               <span className={cn("w-2 h-2 rounded-full animate-pulse", status === 'SPEAKING' ? "bg-aperture-orange" : "bg-emerald-500")} />
               <span className={cn("text-[10px] uppercase tracking-tighter", status === 'SPEAKING' ? "text-aperture-orange" : "text-emerald-500/80")}>
-                {status === 'SPEAKING' ? 'Voice Synthesis Active' : 'System Online - Testing in Progress'}
+                {status === 'SPEAKING' ? 'Voice Synthesis Active' : statusMessage}
               </span>
             </div>
           </div>
@@ -342,6 +447,7 @@ export default function App() {
               <span>Morality Core: Offline</span>
             </div>
           </div>
+          
           <button 
             onClick={() => setIsMuted(!isMuted)}
             className="p-2 rounded-lg hover:bg-white/5 transition-colors text-white/60 hover:text-white"
@@ -375,7 +481,7 @@ export default function App() {
                     : "bg-white/5 border border-white/10 text-white/90"
                 )}>
                   <div className="flex items-center gap-2 mb-2 opacity-50 text-[10px] uppercase tracking-widest font-bold">
-                    {msg.role === 'user' ? 'Staff Member #4223' : 'GLaDOS'}
+                    {msg.role === 'user' ? 'User' : 'GLaDOS'}
                   </div>
                   <div className={cn(
                     "markdown-body prose prose-invert prose-sm max-w-none transition-all duration-300",
@@ -395,7 +501,7 @@ export default function App() {
               className="flex items-center gap-3 text-aperture-orange/50 text-xs animate-pulse"
             >
               <Terminal className="w-4 h-4" />
-              <span>Calculating insults...</span>
+              <span>{statusMessage}...</span>
             </motion.div>
           )}
         </div>
@@ -423,7 +529,7 @@ export default function App() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Enter your query, staff member..."
+              placeholder="Enter your query, User..."
               className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-2 px-4 placeholder:text-white/20"
               disabled={isLoading}
             />
