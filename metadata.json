@@ -1,0 +1,5 @@
+{
+  "name": "GLaDOS AI Terminal",
+  "description": "A conversational interface with GLaDOS, featuring integrated text-to-speech for an immersive Aperture Science experience.",
+  "requestFramePermissions": ["microphone"]
+}
