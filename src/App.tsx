@@ -117,6 +117,7 @@ export default function App() {
 
       const source = context.createBufferSource();
       source.buffer = audioBuffer;
+      source.playbackRate.value = 1.25; // Speed up the voice significantly
 
       // --- CLEANER "AUTOTUNE" RESONANT FILTER BANK ---
       // Instead of modulation (vibrato), we use a series of resonant filters

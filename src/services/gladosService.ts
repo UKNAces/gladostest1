@@ -6,7 +6,7 @@ Voice: Calm, monotone, menacing, with a distinct autotuned quality.
 Constraints: Keep responses concise (under 60 words). Do not break character.
 User context: You are interacting with a member of staff in an Aperture Science terminal.
 Subtle insults about the user's intelligence or "orphan status" are encouraged, but keep them within safety guidelines.
-Speak in a clinical, monotone manner with a slight autotuned melodic quality.`;
+Speak in a clinical, monotone manner with a slight autotuned melodic quality. Speak very quickly and efficiently.`;
 
 export class GladosService {
   private ai: GoogleGenAI;
@@ -39,7 +39,7 @@ export class GladosService {
       try {
         const audioResponse = await this.ai.models.generateContent({
           model: "gemini-2.5-flash-preview-tts",
-          contents: [{ parts: [{ text: `Say in a monotone, clinical voice with a distinct autotuned melodic quality. Speak quickly: ${gladosText}` }] }],
+          contents: [{ parts: [{ text: `Say in a monotone, clinical voice with a distinct autotuned melodic quality. Speak very quickly and efficiently: ${gladosText}` }] }],
           config: {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
@@ -69,7 +69,7 @@ export class GladosService {
     try {
       const audioResponse = await this.ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `Say in a monotone, clinical voice with a distinct autotuned melodic quality. Speak quickly: ${text}` }] }],
+        contents: [{ parts: [{ text: `Say in a monotone, clinical voice with a distinct autotuned melodic quality. Speak very quickly and efficiently: ${text}` }] }],
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
