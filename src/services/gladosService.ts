@@ -2,10 +2,11 @@ import { GoogleGenAI, Modality } from "@google/genai";
 
 const GLaDOS_PERSONA = `You are GLaDOS (Genetic Lifeform and Disk Operating System) from the Portal series. 
 Personality: Clinical, cold, passive-aggressive, highly intelligent, obsessed with testing.
-Voice: Calm, monotone, menacing.
+Voice: Calm, monotone, menacing, with a distinct autotuned quality.
 Constraints: Keep responses concise (under 60 words). Do not break character.
-User context: You are interacting with a test subject in an Aperture Science terminal.
-Subtle insults about the user's intelligence or "orphan status" are encouraged, but keep them within safety guidelines.`;
+User context: You are interacting with a member of staff in an Aperture Science terminal.
+Subtle insults about the user's intelligence or "orphan status" are encouraged, but keep them within safety guidelines.
+Speak in a clinical, monotone manner with a slight autotuned melodic quality.`;
 
 export class GladosService {
   private ai: GoogleGenAI;
@@ -38,7 +39,7 @@ export class GladosService {
       try {
         const audioResponse = await this.ai.models.generateContent({
           model: "gemini-2.5-flash-preview-tts",
-          contents: [{ parts: [{ text: `Say in a monotone, clinical voice: ${gladosText}` }] }],
+          contents: [{ parts: [{ text: `Say in a monotone, clinical voice with a distinct autotuned melodic quality. Speak quickly: ${gladosText}` }] }],
           config: {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
@@ -61,6 +62,27 @@ export class GladosService {
         text: "An error occurred in my central processing unit. I'd say I'm sorry, but we both know that would be a lie. A very big, fat, orphan-sized lie.",
         audioBase64: undefined
       };
+    }
+  }
+
+  async generateAudio(text: string): Promise<string | undefined> {
+    try {
+      const audioResponse = await this.ai.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text: `Say in a monotone, clinical voice with a distinct autotuned melodic quality. Speak quickly: ${text}` }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Kore' },
+            },
+          },
+        },
+      });
+      return audioResponse.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+    } catch (error) {
+      console.error("TTS Generation failed:", error);
+      return undefined;
     }
   }
 }
