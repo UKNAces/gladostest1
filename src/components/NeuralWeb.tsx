@@ -31,13 +31,13 @@ export const NeuralWeb: React.FC<NeuralWebProps> = ({ isSpeaking, audioVolume = 
   }, [audioVolume]);
 
   const initParticles = (width: number, height: number) => {
-    const count = 100;
+    const count = 40; // Reduced for elegance
     particles.current = Array.from({ length: count }, () => ({
       x: Math.random() * width,
       y: Math.random() * height,
-      vx: (Math.random() - 0.5) * 1.5, // Increased base velocity
-      vy: (Math.random() - 0.5) * 1.5,
-      size: Math.random() * 1.5 + 0.5,
+      vx: (Math.random() - 0.5) * 0.2, 
+      vy: (Math.random() - 0.5) * 0.2,
+      size: Math.random() * 0.8 + 0.4,
     }));
   };
 
@@ -47,10 +47,10 @@ export const NeuralWeb: React.FC<NeuralWebProps> = ({ isSpeaking, audioVolume = 
     const currentIsSpeaking = isSpeakingRef.current;
     const currentVolume = audioVolumeRef.current;
 
-    // Reactivity based on audioVolume
-    const speedMultiplier = currentIsSpeaking ? 1 + currentVolume * 15 : 1;
-    const connectionDistance = currentIsSpeaking ? 120 + currentVolume * 150 : 120;
-    const opacity = currentIsSpeaking ? 0.2 + currentVolume * 0.6 : 0.2;
+    // Reactivity based on audioVolume - Toned down for elegance
+    const speedMultiplier = currentIsSpeaking ? 1.02 + currentVolume * 1 : 1.01; 
+    const connectionDistance = currentIsSpeaking ? 150 + currentVolume * 50 : 130; 
+    const opacity = currentIsSpeaking ? 0.3 + currentVolume * 0.4 : 0.2;
 
     // Update and draw particles
     particles.current.forEach((p, i) => {
@@ -63,9 +63,12 @@ export const NeuralWeb: React.FC<NeuralWebProps> = ({ isSpeaking, audioVolume = 
       if (p.y > height) p.y = 0;
 
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size * (1 + currentVolume * 2), 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, p.size * (1.01 + currentVolume * 0.5), 0, Math.PI * 2);
       ctx.fillStyle = `rgba(242, 125, 38, ${opacity})`;
+      ctx.shadowBlur = currentIsSpeaking ? 2 + currentVolume * 5 : 0;
+      ctx.shadowColor = 'rgba(242, 125, 38, 0.2)';
       ctx.fill();
+      ctx.shadowBlur = 0; // Reset for lines
 
       // Draw connections
       for (let j = i + 1; j < particles.current.length; j++) {
@@ -73,14 +76,15 @@ export const NeuralWeb: React.FC<NeuralWebProps> = ({ isSpeaking, audioVolume = 
         const dx = p.x - p2.x;
         const dy = p.y - p2.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
+        const maxDist = connectionDistance;
 
-        if (dist < connectionDistance) {
+        if (dist < maxDist) {
           ctx.beginPath();
           ctx.moveTo(p.x, p.y);
           ctx.lineTo(p2.x, p2.y);
-          const lineOpacity = (1 - dist / connectionDistance) * opacity;
+          const lineOpacity = (1 - dist / maxDist) * (opacity * 0.5);
           ctx.strokeStyle = `rgba(242, 125, 38, ${lineOpacity})`;
-          ctx.lineWidth = currentIsSpeaking ? 0.5 + currentVolume * 2 : 0.5;
+          ctx.lineWidth = currentIsSpeaking ? 0.5 + currentVolume * 1 : 0.2;
           ctx.stroke();
         }
       }
@@ -117,7 +121,7 @@ export const NeuralWeb: React.FC<NeuralWebProps> = ({ isSpeaking, audioVolume = 
     <canvas
       ref={canvasRef}
       className="fixed inset-0 pointer-events-none z-0 opacity-40 mix-blend-screen"
-      style={{ filter: 'drop-shadow(0 0 15px rgba(242, 125, 38, 0.3))' }}
+      style={{ filter: 'drop-shadow(0 0 2px rgba(242, 125, 38, 0.1))' }}
     />
   );
 };

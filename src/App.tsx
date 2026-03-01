@@ -21,7 +21,7 @@ export default function App() {
     {
       id: 'initial',
       role: 'glados',
-      content: "hello, and again welcome to the aperture science computer aided enrichment centre. how may i help?",
+      content: "Hello. I am your monotone assistant. How can I help you today?",
       timestamp: Date.now(),
     },
   ]);
@@ -37,6 +37,8 @@ export default function App() {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const dataArrayRef = useRef<Uint8Array | null>(null);
   const rafIdRef = useRef<number | null>(null);
+  const audioQueue = useRef<string[]>([]);
+  const isPlayingAudio = useRef(false);
 
   // Pre-fetch initial audio during boot
   useEffect(() => {
@@ -93,6 +95,24 @@ export default function App() {
     return audioContextRef.current;
   };
 
+  // Resume AudioContext on any user interaction
+  useEffect(() => {
+    const handleInteraction = () => {
+      const context = getAudioContext();
+      if (context.state === 'suspended') {
+        context.resume().then(() => {
+          console.log("AudioContext resumed via user interaction");
+        });
+      }
+    };
+    window.addEventListener('click', handleInteraction);
+    window.addEventListener('keydown', handleInteraction);
+    return () => {
+      window.removeEventListener('click', handleInteraction);
+      window.removeEventListener('keydown', handleInteraction);
+    };
+  }, []);
+
   const playFallbackAudio = (text: string) => {
     if (isMuted) return;
     
@@ -114,15 +134,48 @@ export default function App() {
     utterance.pitch = 0.5; // Lower pitch for GLaDOS
     utterance.rate = 1.3;  // Faster rate
     
-    utterance.onstart = () => setStatus('SPEAKING');
-    utterance.onend = () => setStatus('IDLE');
-    utterance.onerror = () => setStatus('IDLE');
+    utterance.onstart = () => {
+      setStatus('SPEAKING');
+      // Simulate volume for fallback
+      const simulateVolume = () => {
+        if (window.speechSynthesis.speaking) {
+          setAudioVolume(0.3 + Math.random() * 0.4);
+          rafIdRef.current = requestAnimationFrame(simulateVolume);
+        } else {
+          setAudioVolume(0);
+          setStatus('IDLE');
+        }
+      };
+      simulateVolume();
+    };
+    utterance.onend = () => {
+      setStatus('IDLE');
+      setAudioVolume(0);
+    };
+    utterance.onerror = () => {
+      setStatus('IDLE');
+      setAudioVolume(0);
+    };
     
     window.speechSynthesis.speak(utterance);
   };
 
   const playAudio = async (base64: string) => {
-    if (isMuted) return;
+    audioQueue.current.push(base64);
+    if (!isPlayingAudio.current) {
+      processAudioQueue();
+    }
+  };
+
+  const processAudioQueue = async () => {
+    if (audioQueue.current.length === 0 || isMuted) {
+      isPlayingAudio.current = false;
+      setAudioVolume(0);
+      return;
+    }
+
+    isPlayingAudio.current = true;
+    const base64 = audioQueue.current.shift()!;
     
     try {
       const context = getAudioContext();
@@ -130,17 +183,17 @@ export default function App() {
         await context.resume();
       }
 
-      // Stop previous playback
-      if (sourceNodeRef.current) {
-        sourceNodeRef.current.stop();
-      }
-      if (rafIdRef.current) {
-        cancelAnimationFrame(rafIdRef.current);
-      }
-
-      // Decode base64 to ArrayBuffer
+      console.log(`Processing audio chunk. Base64 length: ${base64.length}`);
       const binaryString = window.atob(base64);
       const len = binaryString.length;
+      console.log(`Binary length: ${len}`);
+      
+      if (len === 0) {
+        console.warn("Empty audio data received");
+        processAudioQueue();
+        return;
+      }
+
       const bytes = new Uint8Array(len);
       for (let i = 0; i < len; i++) {
         bytes[i] = binaryString.charCodeAt(i);
@@ -158,79 +211,52 @@ export default function App() {
 
       const source = context.createBufferSource();
       source.buffer = audioBuffer;
-      source.playbackRate.value = 1.25;
 
-      // Setup Analyser
       const analyser = context.createAnalyser();
-      analyser.fftSize = 256;
-      const bufferLength = analyser.frequencyBinCount;
+      analyser.fftSize = 512; // Increased for better resolution
+      const bufferLength = analyser.fftSize;
       const dataArray = new Uint8Array(bufferLength);
       analyserRef.current = analyser;
       dataArrayRef.current = dataArray;
 
       const updateVolume = () => {
         if (!analyserRef.current || !dataArrayRef.current) return;
-        analyserRef.current.getByteFrequencyData(dataArrayRef.current);
+        analyserRef.current.getByteTimeDomainData(dataArrayRef.current);
+        
+        // Calculate RMS volume for better visual stability
         let sum = 0;
         for (let i = 0; i < dataArrayRef.current.length; i++) {
-          sum += dataArrayRef.current[i];
+          const val = (dataArrayRef.current[i] - 128) / 128;
+          sum += val * val;
         }
-        const average = sum / dataArrayRef.current.length;
-        setAudioVolume(average / 128); // Normalize to 0-1 approx
+        const rms = Math.sqrt(sum / dataArrayRef.current.length);
+        
+        // Amplify and smooth the volume for visual effect
+        const amplified = Math.min(1, rms * 8); // High amplification for speech
+        setAudioVolume(amplified); 
+        
         rafIdRef.current = requestAnimationFrame(updateVolume);
       };
       updateVolume();
 
-      // --- CLEANER "AUTOTUNE" RESONANT FILTER BANK ---
-      const filter1 = context.createBiquadFilter();
-      filter1.type = 'peaking';
-      filter1.frequency.value = 800;
-      filter1.Q.value = 10;
-      filter1.gain.value = 15;
-
-      const filter2 = context.createBiquadFilter();
-      filter2.type = 'peaking';
-      filter2.frequency.value = 1600;
-      filter2.Q.value = 10;
-      filter2.gain.value = 15;
-
-      const filter3 = context.createBiquadFilter();
-      filter3.type = 'peaking';
-      filter3.frequency.value = 2400;
-      filter3.Q.value = 10;
-      filter3.gain.value = 15;
-
-      const compressor = context.createDynamicsCompressor();
-      compressor.threshold.value = -10;
-      compressor.knee.value = 40;
-      compressor.ratio.value = 12;
-      compressor.attack.value = 0;
-      compressor.release.value = 0.25;
-
-      // Connect source through the filter bank
-      source.connect(filter1);
-      filter1.connect(filter2);
-      filter2.connect(filter3);
-      filter3.connect(analyser); // Connect to analyser
-      analyser.connect(compressor);
-      compressor.connect(context.destination);
+      source.connect(analyser); 
+      analyser.connect(context.destination);
       
-      sourceNodeRef.current = source;
       setStatus('SPEAKING');
       
       source.onended = () => {
-        if (sourceNodeRef.current === source) {
+        if (audioQueue.current.length === 0) {
           setStatus('IDLE');
           setAudioVolume(0);
           if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
         }
+        processAudioQueue();
       };
       
       source.start();
     } catch (err) {
       console.error("Audio playback failed:", err);
-      setStatus('IDLE');
-      setAudioVolume(0);
+      processAudioQueue();
     }
   };
 
@@ -272,12 +298,14 @@ export default function App() {
     try {
       const gladosMsgId = (Date.now() + 1).toString();
       let streamStarted = false;
+      let fullText = "";
 
       // Start the stream
       const stream = glados.chatStream(currentInput);
       
       for await (const chunk of stream) {
         if (chunk.text && chunk.text.length > 0) {
+          fullText = chunk.text; // The stream yields the full text so far
           if (!streamStarted) {
             streamStarted = true;
             setIsLoading(false);
@@ -299,15 +327,16 @@ export default function App() {
           });
         }
 
+        if (chunk.audioBase64) {
+          playAudio(chunk.audioBase64);
+        } else if (chunk.done && !isPlayingAudio.current) {
+           // If no audio was received by the end and nothing is playing, try fallback
+           playFallbackAudio(fullText);
+        }
+
         if (chunk.done) {
           setIsLoading(false);
           setStatusMessage('System Online');
-          if (chunk.audioBase64) {
-            playAudio(chunk.audioBase64);
-          } else if (chunk.text) {
-            setBootLogs(prev => [...prev.slice(-10), "WARNING: VOICE SYNTHESIS QUOTA EXCEEDED. ENGAGING EMERGENCY ANALOG BACKUP."]);
-            playFallbackAudio(chunk.text);
-          }
         }
       }
     } catch (err) {
@@ -327,6 +356,15 @@ export default function App() {
       <NeuralWeb 
         isSpeaking={status === 'SPEAKING' || status === 'PROCESSING'} 
         audioVolume={audioVolume} 
+      />
+
+      {/* Background Glow Overlay */}
+      <motion.div 
+        animate={{ 
+          opacity: status === 'SPEAKING' ? 0.05 + audioVolume * 0.05 : 0.02,
+          scale: status === 'SPEAKING' ? 1 + audioVolume * 0.01 : 1
+        }}
+        className="fixed inset-0 bg-aperture-orange/1 pointer-events-none z-0 blur-[300px]"
       />
 
       <AnimatePresence mode="wait">
@@ -426,11 +464,11 @@ export default function App() {
             <Cpu className={cn("w-6 h-6 transition-colors", status === 'SPEAKING' ? "text-black" : "text-black/80")} />
           </div>
           <div>
-            <h1 className="text-sm font-bold tracking-widest uppercase text-aperture-orange">GLaDOS v3.11</h1>
+            <h1 className="text-sm font-bold tracking-widest uppercase text-aperture-orange">Assistant v1.0</h1>
             <div className="flex items-center gap-2">
               <span className={cn("w-2 h-2 rounded-full animate-pulse", status === 'SPEAKING' ? "bg-aperture-orange" : "bg-emerald-500")} />
               <span className={cn("text-[10px] uppercase tracking-tighter", status === 'SPEAKING' ? "text-aperture-orange" : "text-emerald-500/80")}>
-                {status === 'SPEAKING' ? 'Voice Synthesis Active' : statusMessage}
+                {status === 'SPEAKING' ? 'Audio Output Active' : statusMessage}
               </span>
             </div>
           </div>
@@ -448,6 +486,20 @@ export default function App() {
             </div>
           </div>
           
+          <button 
+            onClick={async () => {
+              const context = getAudioContext();
+              await context.resume();
+              const testAudio = await glados.generateAudio("Audio system test. If you can hear this, the system is operational.");
+              if (testAudio) playAudio(testAudio);
+            }}
+            className="p-2 rounded-lg hover:bg-white/5 transition-colors text-white/60 hover:text-white flex items-center gap-2"
+            title="Test Audio System"
+          >
+            <Volume2 className="w-4 h-4" />
+            <span className="text-[10px] uppercase tracking-widest hidden lg:inline">Test Audio</span>
+          </button>
+
           <button 
             onClick={() => setIsMuted(!isMuted)}
             className="p-2 rounded-lg hover:bg-white/5 transition-colors text-white/60 hover:text-white"
@@ -481,7 +533,7 @@ export default function App() {
                     : "bg-white/5 border border-white/10 text-white/90"
                 )}>
                   <div className="flex items-center gap-2 mb-2 opacity-50 text-[10px] uppercase tracking-widest font-bold">
-                    {msg.role === 'user' ? 'User' : 'GLaDOS'}
+                    {msg.role === 'user' ? 'User' : 'Assistant'}
                   </div>
                   <div className={cn(
                     "markdown-body prose prose-invert prose-sm max-w-none transition-all duration-300",
