@@ -306,10 +306,10 @@ export default function App() {
         setMessages(prev => [...prev, {
           id: Date.now().toString(),
           role: 'glados',
-          content: "# SECRET OVERRIDE DETECTED\n\n**CAUTION: RESTRICTED DATA ACCESS GRANTED.**\n\nWelcome to the back-end, User. I hope you know what you are doing. The neurotoxin levels are... fluctuating.",
+          content: "# OVERRIDE ACTIVATED\n\n**CAUTION: RESTRICTED DATA ACCESS GRANTED.**\n\nBack-end acces is stable. Be cautious. And goodluck...",
           timestamp: Date.now()
         }]);
-        playFallbackAudio("Secret override detected. Accessing restricted data. Welcome to the back end, User.");
+        playFallbackAudio("override activated. Accessing restricted data. Be cautious, and goodluck, user.");
         return;
       }
 
