@@ -11,9 +11,14 @@ interface Particle {
 interface NeuralWebProps {
   isSpeaking: boolean;
   audioVolume?: number; // 0 to 1
+  color?: string;
 }
 
-export const NeuralWeb: React.FC<NeuralWebProps> = ({ isSpeaking, audioVolume = 0 }) => {
+export const NeuralWeb: React.FC<NeuralWebProps> = ({ 
+  isSpeaking, 
+  audioVolume = 0,
+  color = '242, 125, 38' // Default Aperture Orange (RGB)
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particles = useRef<Particle[]>([]);
   const animationFrameId = useRef<number>(0);
@@ -21,6 +26,7 @@ export const NeuralWeb: React.FC<NeuralWebProps> = ({ isSpeaking, audioVolume = 
   // Use refs to avoid stale closures in the animation loop
   const isSpeakingRef = useRef(isSpeaking);
   const audioVolumeRef = useRef(audioVolume);
+  const colorRef = useRef(color);
 
   useEffect(() => {
     isSpeakingRef.current = isSpeaking;
@@ -30,13 +36,17 @@ export const NeuralWeb: React.FC<NeuralWebProps> = ({ isSpeaking, audioVolume = 
     audioVolumeRef.current = audioVolume;
   }, [audioVolume]);
 
+  useEffect(() => {
+    colorRef.current = color;
+  }, [color]);
+
   const initParticles = (width: number, height: number) => {
-    const count = 40; // Reduced for elegance
+    const count = 60; // Increased to help form the pattern
     particles.current = Array.from({ length: count }, () => ({
       x: Math.random() * width,
       y: Math.random() * height,
-      vx: (Math.random() - 0.5) * 0.2, 
-      vy: (Math.random() - 0.5) * 0.2,
+      vx: (Math.random() - 0.5) * 0.15, 
+      vy: (Math.random() - 0.5) * 0.15,
       size: Math.random() * 0.8 + 0.4,
     }));
   };
@@ -46,11 +56,12 @@ export const NeuralWeb: React.FC<NeuralWebProps> = ({ isSpeaking, audioVolume = 
     
     const currentIsSpeaking = isSpeakingRef.current;
     const currentVolume = audioVolumeRef.current;
+    const currentColor = colorRef.current;
 
-    // Reactivity based on audioVolume - Toned down for elegance
-    const speedMultiplier = currentIsSpeaking ? 1.02 + currentVolume * 1 : 1.01; 
-    const connectionDistance = currentIsSpeaking ? 150 + currentVolume * 50 : 130; 
-    const opacity = currentIsSpeaking ? 0.3 + currentVolume * 0.4 : 0.2;
+    // Reactivity based on audioVolume
+    const speedMultiplier = currentIsSpeaking ? 2 + currentVolume * 4 : 1.01; 
+    const connectionDistance = currentIsSpeaking ? 180 + currentVolume * 70 : 130; 
+    const opacity = currentIsSpeaking ? 0.8 + currentVolume * 0.2 : 0.4;
 
     // Update and draw particles
     particles.current.forEach((p, i) => {
@@ -62,13 +73,14 @@ export const NeuralWeb: React.FC<NeuralWebProps> = ({ isSpeaking, audioVolume = 
       if (p.y < 0) p.y = height;
       if (p.y > height) p.y = 0;
 
+      // Draw particle
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size * (1.01 + currentVolume * 0.5), 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(242, 125, 38, ${opacity})`;
-      ctx.shadowBlur = currentIsSpeaking ? 2 + currentVolume * 5 : 0;
-      ctx.shadowColor = 'rgba(242, 125, 38, 0.2)';
+      ctx.arc(p.x, p.y, p.size * (1.02 + currentVolume * 1), 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${currentColor}, ${opacity})`;
+      ctx.shadowBlur = currentIsSpeaking ? 5 + currentVolume * 15 : 2;
+      ctx.shadowColor = `rgba(${currentColor}, 0.4)`;
       ctx.fill();
-      ctx.shadowBlur = 0; // Reset for lines
+      ctx.shadowBlur = 0;
 
       // Draw connections
       for (let j = i + 1; j < particles.current.length; j++) {
@@ -82,9 +94,9 @@ export const NeuralWeb: React.FC<NeuralWebProps> = ({ isSpeaking, audioVolume = 
           ctx.beginPath();
           ctx.moveTo(p.x, p.y);
           ctx.lineTo(p2.x, p2.y);
-          const lineOpacity = (1 - dist / maxDist) * (opacity * 0.5);
-          ctx.strokeStyle = `rgba(242, 125, 38, ${lineOpacity})`;
-          ctx.lineWidth = currentIsSpeaking ? 0.5 + currentVolume * 1 : 0.2;
+          const lineOpacity = (1 - dist / maxDist) * (opacity * 0.8);
+          ctx.strokeStyle = `rgba(${currentColor}, ${lineOpacity})`;
+          ctx.lineWidth = currentIsSpeaking ? 1.5 + currentVolume * 2 : 0.6;
           ctx.stroke();
         }
       }
@@ -115,13 +127,13 @@ export const NeuralWeb: React.FC<NeuralWebProps> = ({ isSpeaking, audioVolume = 
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId.current);
     };
-  }, []); // Only run once on mount
+  }, []);
 
   return (
     <canvas
       ref={canvasRef}
-      className="fixed inset-0 pointer-events-none z-0 opacity-40 mix-blend-screen"
-      style={{ filter: 'drop-shadow(0 0 2px rgba(242, 125, 38, 0.1))' }}
+      className="fixed inset-0 pointer-events-none z-10 opacity-70 mix-blend-screen"
+      style={{ filter: `drop-shadow(0 0 4px rgba(${color}, 0.3))` }}
     />
   );
 };

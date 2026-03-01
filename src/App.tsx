@@ -21,10 +21,12 @@ export default function App() {
     {
       id: 'initial',
       role: 'glados',
-      content: "Hello. I am your monotone assistant. How can I help you today?",
+      content: "Hello. User. What is it you require?",
       timestamp: Date.now(),
     },
   ]);
+
+  const [isSecretMode, setIsSecretMode] = useState(false);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -131,8 +133,8 @@ export default function App() {
     
     if (preferredVoice) utterance.voice = preferredVoice;
     
-    utterance.pitch = 0.5; // Lower pitch for GLaDOS
-    utterance.rate = 1.3;  // Faster rate
+    utterance.pitch = 0.2; // Even lower pitch for GLaDOS
+    utterance.rate = 1.5;  // 1.5x speed as requested
     
     utterance.onstart = () => {
       setStatus('SPEAKING');
@@ -211,6 +213,8 @@ export default function App() {
 
       const source = context.createBufferSource();
       source.buffer = audioBuffer;
+      source.playbackRate.value = 1.5; // 1.5x speed as requested
+      source.detune.value = -702; // Lower pitch back to original (compensates for 1.5x speed)
 
       const analyser = context.createAnalyser();
       analyser.fftSize = 512; // Increased for better resolution
@@ -296,6 +300,19 @@ export default function App() {
     setStatusMessage('Generating response...');
 
     try {
+      if (input.trim().toUpperCase() === 'CAV3_GLAD0$') {
+        setIsSecretMode(true);
+        setInput('');
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'glados',
+          content: "# SECRET OVERRIDE DETECTED\n\n**CAUTION: RESTRICTED DATA ACCESS GRANTED.**\n\nWelcome to the back-end, User. I hope you know what you are doing. The neurotoxin levels are... fluctuating.",
+          timestamp: Date.now()
+        }]);
+        playFallbackAudio("Secret override detected. Accessing restricted data. Welcome to the back end, User.");
+        return;
+      }
+
       const gladosMsgId = (Date.now() + 1).toString();
       let streamStarted = false;
       let fullText = "";
@@ -356,15 +373,37 @@ export default function App() {
       <NeuralWeb 
         isSpeaking={status === 'SPEAKING' || status === 'PROCESSING'} 
         audioVolume={audioVolume} 
+        color={isSecretMode ? '220, 38, 38' : '242, 125, 38'}
       />
+
+      {/* Translucent Aperture Logo Background */}
+      <div className="fixed inset-0 flex items-center justify-center pointer-events-none z-0 overflow-hidden">
+        <img 
+          src="https://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/i/ea8bafee-d650-4d93-8bb6-6e58e025b0d9/d2sipae-57ce0d2b-5995-423e-863b-37135e82c035.png/v1/fill/w_1600,h_425,q_80,strp/accurate_aperture_labs_logo_by_leftsquarebracket_d2sipae-fullview.jpg"
+          alt=" Aperture Science Logo " // <---please put here Aperture Science Logo from stefan kakindiros!
+          className={cn(
+            "w-[60vh] h-[60vh] object-contain transition-all duration-700",
+            isSecretMode ? "opacity-[0.25] animate-glitch" : "opacity-[0.1]"
+          )}
+          style={{ 
+            filter: isSecretMode 
+              ? 'invert(20%) sepia(90%) saturate(5000%) hue-rotate(0deg) drop-shadow(0 0 20px rgba(220,38,38,0.5))' 
+              : 'brightness(0) invert(1)',
+          }}
+          referrerPolicy="no-referrer"
+        />
+      </div>
 
       {/* Background Glow Overlay */}
       <motion.div 
         animate={{ 
-          opacity: status === 'SPEAKING' ? 0.05 + audioVolume * 0.05 : 0.02,
-          scale: status === 'SPEAKING' ? 1 + audioVolume * 0.01 : 1
+          opacity: status === 'SPEAKING' ? 0.15 + audioVolume * 0.15 : 0.05,
+          scale: status === 'SPEAKING' ? 1 + audioVolume * 0.05 : 1
         }}
-        className="fixed inset-0 bg-aperture-orange/1 pointer-events-none z-0 blur-[300px]"
+        className={cn(
+          "fixed inset-0 pointer-events-none z-0 blur-[250px]",
+          isSecretMode ? "bg-red-600/10" : "bg-aperture-orange/2"
+        )}
       />
 
       <AnimatePresence mode="wait">
@@ -459,16 +498,29 @@ export default function App() {
         <div className="flex items-center gap-3">
           <div className={cn(
             "w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300",
-            status === 'SPEAKING' ? "bg-aperture-orange shadow-[0_0_25px_rgba(242,125,38,0.8)] scale-110" : "bg-aperture-orange/80 shadow-[0_0_15px_rgba(242,125,38,0.5)]"
+            status === 'SPEAKING' 
+              ? (isSecretMode ? "bg-red-600 shadow-[0_0_25px_rgba(220,38,38,0.8)] scale-110" : "bg-aperture-orange shadow-[0_0_25px_rgba(242,125,38,0.8)] scale-110")
+              : (isSecretMode ? "bg-red-600/80 shadow-[0_0_15px_rgba(220,38,38,0.5)]" : "bg-aperture-orange/80 shadow-[0_0_15px_rgba(242,125,38,0.5)]")
           )}>
             <Cpu className={cn("w-6 h-6 transition-colors", status === 'SPEAKING' ? "text-black" : "text-black/80")} />
           </div>
           <div>
-            <h1 className="text-sm font-bold tracking-widest uppercase text-aperture-orange">Assistant v1.0</h1>
+            <h1 className={cn(
+              "text-sm font-bold tracking-widest uppercase",
+              isSecretMode ? "text-red-600" : "text-aperture-orange"
+            )}>
+              {isSecretMode ? 'RESTRICTED ACCESS' : 'Assistant v1.0'}
+            </h1>
             <div className="flex items-center gap-2">
-              <span className={cn("w-2 h-2 rounded-full animate-pulse", status === 'SPEAKING' ? "bg-aperture-orange" : "bg-emerald-500")} />
-              <span className={cn("text-[10px] uppercase tracking-tighter", status === 'SPEAKING' ? "text-aperture-orange" : "text-emerald-500/80")}>
-                {status === 'SPEAKING' ? 'Audio Output Active' : statusMessage}
+              <span className={cn(
+                "w-2 h-2 rounded-full animate-pulse", 
+                status === 'SPEAKING' ? (isSecretMode ? "bg-red-600" : "bg-aperture-orange") : "bg-emerald-500"
+              )} />
+              <span className={cn(
+                "text-[10px] uppercase tracking-tighter", 
+                status === 'SPEAKING' ? (isSecretMode ? "text-red-600" : "text-aperture-orange") : "text-emerald-500/80"
+              )}>
+                {status === 'SPEAKING' ? 'Audio Output Active' : (isSecretMode ? 'SECRET MODE ACTIVE' : statusMessage)}
               </span>
             </div>
           </div>
@@ -478,11 +530,11 @@ export default function App() {
           <div className="hidden md:flex items-center gap-6 text-[10px] text-white/40 uppercase tracking-widest">
             <div className="flex items-center gap-2">
               <Activity className="w-3 h-3" />
-              <span>Neurotoxin: 0%</span>
+              <span>Neurotoxin: {isSecretMode ? '98%' : '0%'}</span>
             </div>
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-3 h-3" />
-              <span>Morality Core: Offline</span>
+              <span>Morality Core: {isSecretMode ? 'CORRUPTED' : 'Offline'}</span>
             </div>
           </div>
           
@@ -575,20 +627,31 @@ export default function App() {
           onSubmit={handleSubmit}
           className="mt-4 relative group"
         >
-          <div className="absolute inset-0 bg-aperture-orange/5 blur-xl group-focus-within:bg-aperture-orange/10 transition-all duration-500 rounded-full" />
-          <div className="relative flex items-center gap-2 bg-black/40 border border-white/10 focus-within:border-aperture-orange/50 rounded-2xl p-2 transition-all duration-300">
+          <div className={cn(
+            "absolute inset-0 blur-xl transition-all duration-500 rounded-full",
+            isSecretMode ? "bg-red-600/10 group-focus-within:bg-red-600/20" : "bg-aperture-orange/5 group-focus-within:bg-aperture-orange/10"
+          )} />
+          <div className={cn(
+            "relative flex items-center gap-2 bg-black/40 border rounded-2xl p-2 transition-all duration-300",
+            isSecretMode ? "border-red-600/30 focus-within:border-red-600/50" : "border-white/10 focus-within:border-aperture-orange/50"
+          )}>
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Enter your query, User..."
+              placeholder={isSecretMode ? "ACCESSING RESTRICTED TERMINAL..." : "Enter your query, User..."}
               className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-2 px-4 placeholder:text-white/20"
               disabled={isLoading}
             />
             <button
               type="submit"
               disabled={isLoading || !input.trim()}
-              className="p-3 rounded-xl bg-aperture-orange text-black hover:bg-aperture-orange/80 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-[0_0_10px_rgba(242,125,38,0.3)]"
+              className={cn(
+                "p-3 rounded-xl text-black disabled:opacity-50 disabled:cursor-not-allowed transition-all",
+                isSecretMode 
+                  ? "bg-red-600 hover:bg-red-700 shadow-[0_0_10px_rgba(220,38,38,0.3)]" 
+                  : "bg-aperture-orange hover:bg-aperture-orange/80 shadow-[0_0_10px_rgba(242,125,38,0.3)]"
+              )}
             >
               <Send className="w-4 h-4" />
             </button>
