@@ -58,6 +58,12 @@ export default function App() {
   const [initialAudio, setInitialAudio] = useState<string | null>(null);
   const [audioVolume, setAudioVolume] = useState(0);
   const [employeeOfTheMonth, setEmployeeOfTheMonth] = useState({ name: '', achievement: '' });
+  const [mood, setMood] = useState<'NORMAL' | 'LEARNING' | 'ANGRY' | 'ROMANTIC'>('NORMAL');
+
+  const triggerMood = (newMood: 'LEARNING' | 'ANGRY' | 'ROMANTIC', duration = 3000) => {
+    setMood(newMood);
+    setTimeout(() => setMood('NORMAL'), duration);
+  };
 
   useEffect(() => {
     const names = ['Chell', 'Doug Rattmann', 'Caroline', 'Cave Johnson', 'Subject #042', 'Unknown Subject'];
@@ -83,6 +89,7 @@ export default function App() {
   const isPlayingAudio = useRef(false);
   const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const humNodesRef = useRef<{ osc: OscillatorNode; gain: GainNode }[]>([]);
+  const standardHumNodesRef = useRef<{ osc: OscillatorNode; gain: GainNode }[]>([]);
   const thinkingSoundRef = useRef<{ osc: OscillatorNode; gain: GainNode } | null>(null);
   const jumbledSpeechRef = useRef<{ osc: OscillatorNode; gain: GainNode }[]>([]);
 
@@ -503,7 +510,7 @@ export default function App() {
         lfo.start();
         
         gain.gain.setValueAtTime(0, context.currentTime);
-        const baseGain = i === 2 ? 0.06 : 0.08;
+        const baseGain = i === 2 ? 0.12 : 0.15;
         const targetGain = isVenting ? baseGain * 2.5 : baseGain;
         gain.gain.linearRampToValueAtTime(targetGain, context.currentTime + 2);
         
@@ -533,6 +540,53 @@ export default function App() {
       });
     };
   }, [isSecretMode, isMuted, isVenting]);
+
+  // Standard Background Hum
+  useEffect(() => {
+    if (!isSecretMode && !isMuted && !isBooting) {
+      const context = getAudioContext();
+      const nodes: { osc: OscillatorNode; gain: GainNode }[] = [];
+      
+      // Clean 60Hz and 120Hz sine hum
+      const frequencies = [60, 120];
+      
+      frequencies.forEach((freq, i) => {
+        const osc = context.createOscillator();
+        const gain = context.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, context.currentTime);
+        
+        gain.gain.setValueAtTime(0, context.currentTime);
+        const targetGain = i === 0 ? 0.12 : 0.06;
+        gain.gain.linearRampToValueAtTime(targetGain, context.currentTime + 3);
+        
+        osc.connect(gain);
+        gain.connect(context.destination);
+        
+        osc.start();
+        nodes.push({ osc, gain });
+      });
+      
+      standardHumNodesRef.current = nodes;
+    } else {
+      // Fade out and stop standard hum
+      standardHumNodesRef.current.forEach(({ osc, gain }) => {
+        const context = getAudioContext();
+        gain.gain.linearRampToValueAtTime(0, context.currentTime + 1);
+        setTimeout(() => {
+          try { osc.stop(); } catch(e) {}
+        }, 1000);
+      });
+      standardHumNodesRef.current = [];
+    }
+    
+    return () => {
+      standardHumNodesRef.current.forEach(({ osc }) => {
+        try { osc.stop(); } catch(e) {}
+      });
+    };
+  }, [isSecretMode, isMuted, isBooting]);
 
   // Thinking Sound Management
   useEffect(() => {
@@ -566,7 +620,21 @@ export default function App() {
     try {
       const upperInput = input.trim().toUpperCase();
       
+      // Check for insults or specific keywords to trigger moods
+      const insults = ['DUMB', 'STUPID', 'IDIOT', 'HATE', 'USELESS', 'BAD', 'TERRIBLE', 'AWFUL', 'SHUT UP', 'DIE'];
+      const compliments = ['GOOD', 'GREAT', 'SMART', 'GENIUS', 'AMAZING', 'BEST'];
+      const romantic = ['LOVE', 'KIND', 'CAKE'];
+
+      if (insults.some(word => upperInput.includes(word))) {
+        triggerMood('ANGRY');
+      } else if (romantic.some(word => upperInput.includes(word))) {
+        triggerMood('ROMANTIC');
+      } else if (compliments.some(word => upperInput.includes(word))) {
+        triggerMood('LEARNING');
+      }
+
       if (upperInput === 'HELP') {
+        triggerMood('LEARNING');
         const helpText = `
 # APERTURE SCIENCE TERMINAL HELP
 Available commands for authorized personnel:
@@ -593,6 +661,7 @@ Available commands for authorized personnel:
       }
 
       if (upperInput === 'STATUS') {
+        triggerMood('LEARNING');
         const statusText = `
 # SYSTEM STATUS
 - **Core Temperature**: 34°C (Optimal)
@@ -614,6 +683,7 @@ Available commands for authorized personnel:
       }
 
       if (upperInput === 'DAILY_REPORT') {
+        triggerMood('LEARNING');
         const reports = [
           "The cafeteria is now serving gray paste. It is nutritionally complete and tastes like nothing.",
           "The elevator in Sector C is still screaming. Maintenance has been notified but is currently being incinerated.",
@@ -635,6 +705,7 @@ Available commands for authorized personnel:
       }
 
       if (upperInput === 'CAKE_RECIPE') {
+        triggerMood('LEARNING');
         const recipe = `
 # THE CAKE IS [NOT] A LIE
 ## Official Aperture Science Cake Recipe
@@ -670,6 +741,7 @@ Available commands for authorized personnel:
       }
 
       if (upperInput === 'START_TEST') {
+        triggerMood('ANGRY');
         const tests = [
           "Logic Test 01: If a tree falls in a forest and no one is around to hear it, does it still count as a failure for the tree? Answer: Yes.",
           "Compliance Test 04: Please remain still while we calibrate the neurotoxin vents. Do not breathe. Breathing is a sign of non-compliance.",
@@ -703,6 +775,7 @@ Available commands for authorized personnel:
       }
 
       if (upperInput === 'CAV3_GLAD0$') {
+        triggerMood('ANGRY');
         setIsSecretMode(true);
         setInput('');
         setIsLoading(false);
@@ -782,6 +855,7 @@ Available commands for authorized personnel:
         }
 
         if (upperInput === 'CORRUPT_CORE') {
+          triggerMood('ANGRY');
           if (isCorrupted) {
             setMessages(prev => [...prev, {
               id: Date.now().toString(),
@@ -810,6 +884,7 @@ Available commands for authorized personnel:
         }
 
         if (upperInput === 'REPAIR_CORE') {
+          triggerMood('LEARNING');
           if (!isCorrupted) {
             setMessages(prev => [...prev, {
               id: Date.now().toString(),
@@ -839,6 +914,7 @@ Available commands for authorized personnel:
         }
 
         if (upperInput === 'LS') {
+          triggerMood('LEARNING');
           const files = Object.keys(HIDDEN_FILES).join('\n');
           setMessages(prev => [...prev, {
             id: Date.now().toString(),
@@ -854,6 +930,7 @@ Available commands for authorized personnel:
         }
 
         if (upperInput.startsWith('CAT ')) {
+          triggerMood('LEARNING');
           const fileName = input.trim().substring(4).toLowerCase();
           const fileContent = HIDDEN_FILES[fileName];
           setMessages(prev => [...prev, {
@@ -870,6 +947,7 @@ Available commands for authorized personnel:
         }
 
         if (upperInput === 'INITIATE_VENTS') {
+          triggerMood('ANGRY');
           if (isVenting) {
             setMessages(prev => [...prev, {
               id: Date.now().toString(),
@@ -899,6 +977,7 @@ Available commands for authorized personnel:
         }
 
         if (upperInput === 'STOP_VENTS' || upperInput === 'REVERSE_VENTS') {
+          triggerMood('LEARNING');
           if (!isVenting) {
             setMessages(prev => [...prev, {
               id: Date.now().toString(),
@@ -928,6 +1007,7 @@ Available commands for authorized personnel:
         }
 
         if (upperInput === 'START_TEST_01') {
+          triggerMood('ANGRY');
           setMessages(prev => [...prev, {
             id: Date.now().toString(),
             role: 'glados',
@@ -1042,6 +1122,7 @@ Available commands for authorized personnel:
       <NeuralWeb 
         isSpeaking={status === 'SPEAKING' || status === 'PROCESSING'} 
         audioVolume={audioVolume} 
+        mood={mood}
         color={isVenting ? '34, 197, 94' : isSecretMode ? '220, 38, 38' : '242, 125, 38'}
       />
 
@@ -1052,8 +1133,12 @@ Available commands for authorized personnel:
           scale: status === 'SPEAKING' ? 1 + audioVolume * 0.05 : 1
         }}
         className={cn(
-          "fixed inset-0 pointer-events-none z-0 blur-[250px]",
-          isSecretMode ? "bg-red-600/10" : "bg-aperture-orange/2"
+          "fixed inset-0 pointer-events-none z-0 blur-[250px] transition-colors duration-1000",
+          isSecretMode ? "bg-red-600/10" : 
+          mood === 'ANGRY' ? "bg-red-600/20" :
+          mood === 'LEARNING' ? "bg-blue-600/20" :
+          mood === 'ROMANTIC' ? "bg-pink-500/20" :
+          "bg-aperture-orange/2"
         )}
       />
 
