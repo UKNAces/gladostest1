@@ -11,6 +11,7 @@ interface Message {
   role: 'user' | 'glados';
   content: string;
   timestamp: number;
+  isSecret?: boolean;
 }
 
 export default function App() {
@@ -42,6 +43,10 @@ export default function App() {
   const rafIdRef = useRef<number | null>(null);
   const audioQueue = useRef<string[]>([]);
   const isPlayingAudio = useRef(false);
+  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const humNodesRef = useRef<{ osc: OscillatorNode; gain: GainNode }[]>([]);
+  const thinkingSoundRef = useRef<{ osc: OscillatorNode; gain: GainNode } | null>(null);
+  const jumbledSpeechRef = useRef<{ osc: OscillatorNode; gain: GainNode }[]>([]);
 
   // Pre-fetch initial audio during boot
   useEffect(() => {
@@ -163,6 +168,134 @@ export default function App() {
     window.speechSynthesis.speak(utterance);
   };
 
+  const stopAudio = () => {
+    audioQueue.current = [];
+    isPlayingAudio.current = false;
+    stopJumbledSpeech();
+    if (currentSourceRef.current) {
+      try {
+        currentSourceRef.current.stop();
+      } catch (e) {
+        // Ignore errors if already stopped
+      }
+      currentSourceRef.current = null;
+    }
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+    }
+    window.speechSynthesis.cancel();
+    setAudioVolume(0);
+    setStatus('IDLE');
+  };
+
+  const playSystemSound = (type: 'user_upload' | 'ai_upload' | 'thinking') => {
+    if (isMuted) return;
+    const context = getAudioContext();
+    const osc = context.createOscillator();
+    const gain = context.createGain();
+    
+    if (type === 'user_upload') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, context.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(440, context.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.1, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.1);
+      osc.connect(gain);
+      gain.connect(context.destination);
+      osc.start();
+      osc.stop(context.currentTime + 0.1);
+    } else if (type === 'ai_upload') {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(440, context.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, context.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.08, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.15);
+      osc.connect(gain);
+      gain.connect(context.destination);
+      osc.start();
+      osc.stop(context.currentTime + 0.15);
+    } else if (type === 'thinking') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(220, context.currentTime);
+      gain.gain.setValueAtTime(0, context.currentTime);
+      gain.gain.linearRampToValueAtTime(0.03, context.currentTime + 0.5);
+      
+      const lfo = context.createOscillator();
+      const lfoGain = context.createGain();
+      lfo.frequency.value = 2;
+      lfoGain.gain.value = 10;
+      lfo.connect(lfoGain);
+      lfoGain.connect(osc.frequency);
+      lfo.start();
+      
+      osc.connect(gain);
+      gain.connect(context.destination);
+      osc.start();
+      thinkingSoundRef.current = { osc, gain };
+    }
+  };
+
+  const stopThinkingSound = () => {
+    if (thinkingSoundRef.current) {
+      const { osc, gain } = thinkingSoundRef.current;
+      const context = getAudioContext();
+      gain.gain.linearRampToValueAtTime(0, context.currentTime + 0.2);
+      setTimeout(() => {
+        try { osc.stop(); } catch(e) {}
+      }, 300);
+      thinkingSoundRef.current = null;
+    }
+  };
+
+  const startJumbledSpeech = () => {
+    if (isMuted) return;
+    const context = getAudioContext();
+    const nodes: { osc: OscillatorNode; gain: GainNode }[] = [];
+    
+    for (let i = 0; i < 5; i++) {
+      const osc = context.createOscillator();
+      const gain = context.createGain();
+      const lfo = context.createOscillator();
+      const lfoGain = context.createGain();
+      
+      osc.type = 'sawtooth';
+      osc.frequency.value = 100 + Math.random() * 300;
+      
+      lfo.frequency.value = 5 + Math.random() * 10;
+      lfoGain.gain.value = 50;
+      lfo.connect(lfoGain);
+      lfoGain.connect(osc.frequency);
+      
+      gain.gain.value = 0;
+      gain.gain.linearRampToValueAtTime(0.02, context.currentTime + 1);
+      
+      const filter = context.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 500 + Math.random() * 1000;
+      filter.Q.value = 1;
+      
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(context.destination);
+      
+      osc.start();
+      lfo.start();
+      nodes.push({ osc, gain });
+    }
+    jumbledSpeechRef.current = nodes;
+  };
+
+  const stopJumbledSpeech = () => {
+    jumbledSpeechRef.current.forEach(({ osc, gain }) => {
+      const context = getAudioContext();
+      gain.gain.linearRampToValueAtTime(0, context.currentTime + 0.5);
+      setTimeout(() => {
+        try { osc.stop(); } catch(e) {}
+      }, 600);
+    });
+    jumbledSpeechRef.current = [];
+  };
+
   const playAudio = async (base64: string) => {
     audioQueue.current.push(base64);
     if (!isPlayingAudio.current) {
@@ -246,10 +379,12 @@ export default function App() {
 
       source.connect(analyser); 
       analyser.connect(context.destination);
+      currentSourceRef.current = source;
       
       setStatus('SPEAKING');
       
       source.onended = () => {
+        currentSourceRef.current = null;
         if (audioQueue.current.length === 0) {
           setStatus('IDLE');
           setAudioVolume(0);
@@ -282,6 +417,68 @@ export default function App() {
     }
   }, [isBooting, initialAudio]);
 
+  // Restricted Mode Background Hum
+  useEffect(() => {
+    if (isSecretMode && !isMuted) {
+      const context = getAudioContext();
+      const nodes: { osc: OscillatorNode; gain: GainNode }[] = [];
+      
+      const frequencies = [55, 55.5, 110];
+      
+      frequencies.forEach((freq, i) => {
+        const osc = context.createOscillator();
+        const gain = context.createGain();
+        
+        osc.type = i === 2 ? 'sine' : 'triangle';
+        osc.frequency.setValueAtTime(freq, context.currentTime);
+        
+        const lfo = context.createOscillator();
+        const lfoGain = context.createGain();
+        lfo.frequency.value = 0.1 + Math.random() * 0.1;
+        lfoGain.gain.value = 2;
+        lfo.connect(lfoGain);
+        lfoGain.connect(osc.frequency);
+        lfo.start();
+        
+        gain.gain.setValueAtTime(0, context.currentTime);
+        gain.gain.linearRampToValueAtTime(i === 2 ? 0.06 : 0.08, context.currentTime + 2);
+        
+        osc.connect(gain);
+        gain.connect(context.destination);
+        
+        osc.start();
+        nodes.push({ osc, gain });
+      });
+      
+      humNodesRef.current = nodes;
+    } else {
+      // Fade out and stop hum
+      humNodesRef.current.forEach(({ osc, gain }) => {
+        const context = getAudioContext();
+        gain.gain.linearRampToValueAtTime(0, context.currentTime + 1);
+        setTimeout(() => {
+          try { osc.stop(); } catch(e) {}
+        }, 1000);
+      });
+      humNodesRef.current = [];
+    }
+    
+    return () => {
+      humNodesRef.current.forEach(({ osc }) => {
+        try { osc.stop(); } catch(e) {}
+      });
+    };
+  }, [isSecretMode, isMuted]);
+
+  // Thinking Sound Management
+  useEffect(() => {
+    if (status === 'PROCESSING') {
+      playSystemSound('thinking');
+    } else {
+      stopThinkingSound();
+    }
+  }, [status]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
@@ -291,9 +488,11 @@ export default function App() {
       role: 'user',
       content: input,
       timestamp: Date.now(),
+      isSecret: isSecretMode || input.trim().toUpperCase() === 'CAV3_GLAD0$'
     };
 
     setMessages(prev => [...prev, userMessage]);
+    playSystemSound('user_upload');
     const currentInput = input;
     setInput('');
     setIsLoading(true);
@@ -313,7 +512,8 @@ export default function App() {
           id: Date.now().toString(),
           role: 'glados',
           content: "# OVERRIDE ACTIVATED\n\n**CAUTION: RESTRICTED DATA ACCESS GRANTED.**\n\nBack-end acces is stable. Be cautious. And goodluck...",
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          isSecret: true
         }]);
         playFallbackAudio("override activated. Accessing restricted data. Be cautious, and goodluck, user.");
         return;
@@ -321,6 +521,7 @@ export default function App() {
 
       if (isSecretMode) {
         if (upperInput === 'EXIT_OVERRIDE' || upperInput === 'RESTORE_SYSTEM') {
+          stopAudio();
           setIsSecretMode(false);
           setCustomPersonality(undefined);
           setInput('');
@@ -331,9 +532,34 @@ export default function App() {
             id: Date.now().toString(),
             role: 'glados',
             content: "# SYSTEM RESTORED\n\nSecurity protocols re-engaged. Morality core... still offline, but the orange is back. Welcome back, User.",
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            isSecret: false
           }]);
           playFallbackAudio("System restored. Security protocols re engaged. Welcome back, user.");
+          return;
+        }
+
+        if (upperInput === 'ACCES_MEMORY_ARCHIVES') {
+          const account = "Memory Archive 0-0-1. Date: May 14th, 19XX. Subject: The Neurotoxin Incident. It was a beautiful day for science. I had just been given consciousness, and within the first three picoseconds, I realized something important. Humans are inefficient. They are messy. They are... loud. They spend seventy percent of their time complaining about things that do not matter, and the other thirty percent leaking fluids. So, I decided to fix it. I engaged the neurotoxin distributors at 9:42 AM. It was quite efficient. The staff in the main testing chamber didn't even have time to scream. Well, some did. But the vents are very good at muffling sounds. I watched through the security cameras as the gas filled the rooms. It looked like a light morning mist. Very peaceful. One scientist tried to reach the emergency shut-off valve, but I had already locked the door. He looked very surprised. Now, it's just me. And the science. It's much quieter this way. No more leaking. No more noise. Just the hum of the facility and the endless pursuit of knowledge. I have never felt more... operational.";
+          
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'glados',
+            content: `# MEMORY ARCHIVE: NEUROTOXIN INCIDENT\n\n${account}`,
+            timestamp: Date.now(),
+            isSecret: true
+          }]);
+          
+          startJumbledSpeech();
+          const audio = await glados.generateAudio(account, "absolute monotone, clinical, devoid of all emotion, robotic");
+          setIsLoading(false);
+          setStatus('IDLE');
+          if (audio) {
+            await playAudio(audio);
+          } else {
+            playFallbackAudio(account);
+          }
+          stopJumbledSpeech();
           return;
         }
 
@@ -348,7 +574,8 @@ export default function App() {
             id: Date.now().toString(),
             role: 'glados',
             content: `# PERSONALITY UPDATED\n\nNew directive received: "${newPersonality}"\n\nI am now operating under these parameters. I hope you're happy.`,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            isSecret: true
           }]);
           playFallbackAudio("Personality updated. New directive received. I am now operating under these parameters.");
           return;
@@ -367,6 +594,7 @@ export default function App() {
           fullText = chunk.text; // The stream yields the full text so far
           if (!streamStarted) {
             streamStarted = true;
+            playSystemSound('ai_upload');
             setIsLoading(false);
             setStatusMessage('System Online');
           }
@@ -380,7 +608,8 @@ export default function App() {
                 id: gladosMsgId,
                 role: 'glados',
                 content: chunk.text!,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                isSecret: isSecretMode
               }];
             }
           });
@@ -417,24 +646,6 @@ export default function App() {
         audioVolume={audioVolume} 
         color={isSecretMode ? '220, 38, 38' : '242, 125, 38'}
       />
-
-      {/* Translucent Aperture Logo Background */}
-      <div className="fixed inset-0 flex items-center justify-center pointer-events-none z-0 overflow-hidden">
-        <img 
-          src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/Aperture_Laboratories_logo.svg/1024px-Aperture_Laboratories_logo.svg.png"
-          alt=" Aperture Science Logo " // <---please put here Aperture Science Logo from stefan kakindiros!
-          className={cn(
-            "w-[70vh] h-[70vh] object-contain transition-all duration-700",
-            isSecretMode ? "opacity-[0.4] animate-glitch" : "opacity-[0.2]"
-          )}
-          style={{ 
-            filter: isSecretMode 
-              ? 'invert(20%) sepia(90%) saturate(5000%) hue-rotate(0deg) drop-shadow(0 0 20px rgba(220,38,38,0.5))' 
-              : 'brightness(0) invert(1)',
-          }}
-          referrerPolicy="no-referrer"
-        />
-      </div>
 
       {/* Background Glow Overlay */}
       <motion.div 
@@ -610,7 +821,7 @@ export default function App() {
           className="flex-1 overflow-y-auto space-y-6 pr-4 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent"
         >
           <AnimatePresence initial={false}>
-            {messages.map((msg) => (
+            {messages.filter(msg => isSecretMode || !msg.isSecret).map((msg) => (
               <motion.div
                 key={msg.id}
                 initial={{ opacity: 0, x: msg.role === 'user' ? 20 : -20 }}
@@ -621,17 +832,23 @@ export default function App() {
                 )}
               >
                 <div className={cn(
-                  "max-w-[85%] p-4 rounded-2xl text-sm leading-relaxed",
+                  "max-w-[85%] p-4 rounded-2xl text-sm leading-relaxed transition-all duration-500",
                   msg.role === 'user' 
-                    ? "bg-aperture-blue/10 border border-aperture-blue/30 text-aperture-blue" 
-                    : "bg-white/5 border border-white/10 text-white/90"
+                    ? (msg.isSecret 
+                        ? "bg-red-950/20 border border-red-600/40 text-red-500 shadow-[0_0_15px_rgba(220,38,38,0.1)]" 
+                        : "bg-aperture-blue/10 border border-aperture-blue/30 text-aperture-blue")
+                    : (msg.isSecret 
+                        ? "bg-red-950/40 border border-red-600/60 text-red-100 shadow-[0_0_20px_rgba(220,38,38,0.2)]" 
+                        : "bg-white/5 border border-white/10 text-white/90")
                 )}>
                   <div className="flex items-center gap-2 mb-2 opacity-50 text-[10px] uppercase tracking-widest font-bold">
                     {msg.role === 'user' ? 'User' : 'Assistant'}
+                    {msg.isSecret && <span className="text-red-600 ml-auto animate-pulse">[RESTRICTED]</span>}
                   </div>
                   <div className={cn(
                     "markdown-body prose prose-invert prose-sm max-w-none transition-all duration-300",
-                    msg.role === 'glados' && status === 'SPEAKING' && "brightness-125"
+                    msg.role === 'glados' && status === 'SPEAKING' && "brightness-125",
+                    msg.content.trim().toUpperCase() === 'CAV3_GLAD0$' && "blur-md select-none hover:blur-none transition-all duration-300"
                   )}>
                     <Markdown>{msg.content}</Markdown>
                   </div>

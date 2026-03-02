@@ -35,19 +35,23 @@ export class GladosService {
 
   async chat(message: string, customInstruction?: string): Promise<{ text: string; audioBase64?: string }> {
     try {
+      const systemInstruction = customInstruction 
+        ? `You are an AI assistant with the following personality: ${customInstruction}. Maintain this persona strictly in all responses.`
+        : ASSISTANT_PERSONA;
+
       // 1. Generate text response
       const textResponse = await this.ai.models.generateContent({
         model: this.textModel,
         contents: [{ parts: [{ text: message }] }],
         config: {
-          systemInstruction: customInstruction || ASSISTANT_PERSONA,
+          systemInstruction,
         },
       });
 
       const text = textResponse.text || "I am processing your request.";
 
       // 2. Generate audio from text
-      const audioBase64 = await this.generateAudio(text);
+      const audioBase64 = await this.generateAudio(text, customInstruction);
 
       return { text, audioBase64 };
     } catch (error: any) {
@@ -62,12 +66,16 @@ export class GladosService {
   async *chatStream(message: string, customInstruction?: string): AsyncGenerator<{ text?: string; audioBase64?: string; done?: boolean }> {
     let fullText = "";
     try {
+      const systemInstruction = customInstruction 
+        ? `You are an AI assistant with the following personality: ${customInstruction}. Maintain this persona strictly in all responses.`
+        : ASSISTANT_PERSONA;
+
       // 1. Stream text response
       const responseStream = await this.ai.models.generateContentStream({
         model: this.textModel,
         contents: [{ parts: [{ text: message }] }],
         config: {
-          systemInstruction: customInstruction || ASSISTANT_PERSONA,
+          systemInstruction,
         },
       });
 
@@ -80,7 +88,7 @@ export class GladosService {
       }
 
       // 2. Generate audio for the full response once text is complete
-      const audioBase64 = await this.generateAudio(fullText);
+      const audioBase64 = await this.generateAudio(fullText, customInstruction);
       yield { text: fullText, audioBase64, done: true };
 
     } catch (error: any) {
@@ -90,12 +98,16 @@ export class GladosService {
     }
   }
 
-  async generateAudio(text: string): Promise<string | undefined> {
+  async generateAudio(text: string, personalityHint?: string): Promise<string | undefined> {
     try {
+      const ttsPrompt = personalityHint 
+        ? `Speak the following text as a character with this personality: ${personalityHint}. Text: ${text}`
+        : `Say in a monotone, clinical voice: ${text}`;
+
       // Specialized TTS model for high-quality native audio
       const response = await this.withRetry(() => this.ai.models.generateContent({
         model: this.ttsModel,
-        contents: [{ parts: [{ text: `Say in a monotone, clinical voice: ${text}` }] }],
+        contents: [{ parts: [{ text: ttsPrompt }] }],
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
