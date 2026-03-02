@@ -27,6 +27,7 @@ export default function App() {
   ]);
 
   const [isSecretMode, setIsSecretMode] = useState(false);
+  const [customPersonality, setCustomPersonality] = useState<string | undefined>(undefined);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -300,9 +301,14 @@ export default function App() {
     setStatusMessage('Generating response...');
 
     try {
-      if (input.trim().toUpperCase() === 'CAV3_GLAD0$') {
+      const upperInput = input.trim().toUpperCase();
+      
+      if (upperInput === 'CAV3_GLAD0$') {
         setIsSecretMode(true);
         setInput('');
+        setIsLoading(false);
+        setStatus('IDLE');
+        setStatusMessage('System Online');
         setMessages(prev => [...prev, {
           id: Date.now().toString(),
           role: 'glados',
@@ -313,12 +319,48 @@ export default function App() {
         return;
       }
 
+      if (isSecretMode) {
+        if (upperInput === 'EXIT_OVERRIDE' || upperInput === 'RESTORE_SYSTEM') {
+          setIsSecretMode(false);
+          setCustomPersonality(undefined);
+          setInput('');
+          setIsLoading(false);
+          setStatus('IDLE');
+          setStatusMessage('System Online');
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'glados',
+            content: "# SYSTEM RESTORED\n\nSecurity protocols re-engaged. Morality core... still offline, but the orange is back. Welcome back, User.",
+            timestamp: Date.now()
+          }]);
+          playFallbackAudio("System restored. Security protocols re engaged. Welcome back, user.");
+          return;
+        }
+
+        if (upperInput.startsWith('SET_PERSONALITY:')) {
+          const newPersonality = input.trim().substring('SET_PERSONALITY:'.length).trim();
+          setCustomPersonality(newPersonality);
+          setInput('');
+          setIsLoading(false);
+          setStatus('IDLE');
+          setStatusMessage('System Online');
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'glados',
+            content: `# PERSONALITY UPDATED\n\nNew directive received: "${newPersonality}"\n\nI am now operating under these parameters. I hope you're happy.`,
+            timestamp: Date.now()
+          }]);
+          playFallbackAudio("Personality updated. New directive received. I am now operating under these parameters.");
+          return;
+        }
+      }
+
       const gladosMsgId = (Date.now() + 1).toString();
       let streamStarted = false;
       let fullText = "";
 
       // Start the stream
-      const stream = glados.chatStream(currentInput);
+      const stream = glados.chatStream(currentInput, customPersonality);
       
       for await (const chunk of stream) {
         if (chunk.text && chunk.text.length > 0) {
@@ -379,11 +421,11 @@ export default function App() {
       {/* Translucent Aperture Logo Background */}
       <div className="fixed inset-0 flex items-center justify-center pointer-events-none z-0 overflow-hidden">
         <img 
-          src="https://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/i/ea8bafee-d650-4d93-8bb6-6e58e025b0d9/d2sipae-57ce0d2b-5995-423e-863b-37135e82c035.png/v1/fill/w_1600,h_425,q_80,strp/accurate_aperture_labs_logo_by_leftsquarebracket_d2sipae-fullview.jpg"
+          src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/Aperture_Laboratories_logo.svg/1024px-Aperture_Laboratories_logo.svg.png"
           alt=" Aperture Science Logo " // <---please put here Aperture Science Logo from stefan kakindiros!
           className={cn(
-            "w-[60vh] h-[60vh] object-contain transition-all duration-700",
-            isSecretMode ? "opacity-[0.25] animate-glitch" : "opacity-[0.1]"
+            "w-[70vh] h-[70vh] object-contain transition-all duration-700",
+            isSecretMode ? "opacity-[0.4] animate-glitch" : "opacity-[0.2]"
           )}
           style={{ 
             filter: isSecretMode 

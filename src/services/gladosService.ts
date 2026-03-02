@@ -33,14 +33,14 @@ export class GladosService {
     }
   }
 
-  async chat(message: string): Promise<{ text: string; audioBase64?: string }> {
+  async chat(message: string, customInstruction?: string): Promise<{ text: string; audioBase64?: string }> {
     try {
       // 1. Generate text response
       const textResponse = await this.ai.models.generateContent({
         model: this.textModel,
         contents: [{ parts: [{ text: message }] }],
         config: {
-          systemInstruction: ASSISTANT_PERSONA,
+          systemInstruction: customInstruction || ASSISTANT_PERSONA,
         },
       });
 
@@ -59,7 +59,7 @@ export class GladosService {
     }
   }
 
-  async *chatStream(message: string): AsyncGenerator<{ text?: string; audioBase64?: string; done?: boolean }> {
+  async *chatStream(message: string, customInstruction?: string): AsyncGenerator<{ text?: string; audioBase64?: string; done?: boolean }> {
     let fullText = "";
     try {
       // 1. Stream text response
@@ -67,7 +67,7 @@ export class GladosService {
         model: this.textModel,
         contents: [{ parts: [{ text: message }] }],
         config: {
-          systemInstruction: ASSISTANT_PERSONA,
+          systemInstruction: customInstruction || ASSISTANT_PERSONA,
         },
       });
 
