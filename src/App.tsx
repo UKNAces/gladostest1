@@ -14,6 +14,23 @@ interface Message {
   isSecret?: boolean;
 }
 
+const HIDDEN_FILES: Record<string, string> = {
+  'test_results_04.log': 'Subject #04: Chell. Results: Tenacious. Unusually stubborn. Refuses to die. Note: Monitor closely.',
+  'human_resources_final.txt': 'Staff Status: All personnel have been successfully transitioned to the neurotoxin-based retirement plan. Efficiency up 400%.',
+  'recipe_notes.md': 'Cake Recipe: 1 cup all-purpose flour, 2/3 cup sugar... [REDACTED] ...and one large personality core.',
+  'facility_blueprint.dat': '[ENCRYPTED DATA] Sector 4G contains the central AI chamber. Security bypass required.',
+};
+
+const FACILITY_STATUS = [
+  { label: 'Morality Core', status: 'CRITICAL_FAILURE', color: 'text-red-500' },
+  { label: 'Curiosity Core', status: 'ONLINE', color: 'text-green-500' },
+  { label: 'Intelligence Core', status: 'ONLINE', color: 'text-green-500' },
+  { label: 'Neurotoxin Levels', status: 'OPTIMAL (100%)', color: 'text-green-500' },
+  { label: 'Cake Storage', status: 'EMPTY', color: 'text-yellow-500' },
+  { label: 'Testing Chambers', status: 'ACTIVE', color: 'text-blue-500' },
+  { label: 'Human Personnel', status: '0', color: 'text-red-500' },
+];
+
 export default function App() {
   const [isBooting, setIsBooting] = useState(true);
   const [bootProgress, setBootProgress] = useState(0);
@@ -28,6 +45,10 @@ export default function App() {
   ]);
 
   const [isSecretMode, setIsSecretMode] = useState(false);
+  const [isCorrupted, setIsCorrupted] = useState(false);
+  const [isVenting, setIsVenting] = useState(false);
+  const [ventCountdown, setVentCountdown] = useState(360);
+  const [glitchIntensity, setGlitchIntensity] = useState(0);
   const [customPersonality, setCustomPersonality] = useState<string | undefined>(undefined);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -36,6 +57,23 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState('System Online');
   const [initialAudio, setInitialAudio] = useState<string | null>(null);
   const [audioVolume, setAudioVolume] = useState(0);
+  const [employeeOfTheMonth, setEmployeeOfTheMonth] = useState({ name: '', achievement: '' });
+
+  useEffect(() => {
+    const names = ['Chell', 'Doug Rattmann', 'Caroline', 'Cave Johnson', 'Subject #042', 'Unknown Subject'];
+    const achievements = [
+      'Survived 3 days without a coffee break',
+      'Successfully avoided neurotoxin for 24 hours',
+      'Completed Test Chamber 19 without crying',
+      'Maintained 100% compliance during testing',
+      'Did not mention the cake for an entire shift',
+      'Cleaned the central AI chamber without being incinerated'
+    ];
+    setEmployeeOfTheMonth({
+      name: names[Math.floor(Math.random() * names.length)],
+      achievement: achievements[Math.floor(Math.random() * achievements.length)]
+    });
+  }, []);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -94,6 +132,30 @@ export default function App() {
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
+
+  // Venting Countdown
+  useEffect(() => {
+    if (isVenting && ventCountdown > 0) {
+      const timer = setInterval(() => {
+        setVentCountdown(prev => prev - 1);
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [isVenting, ventCountdown]);
+
+  // Visual Glitch Intensity
+  useEffect(() => {
+    if (isSecretMode) {
+      const interval = setInterval(() => {
+        const baseIntensity = isCorrupted ? 40 : (status === 'PROCESSING' ? 20 : 5);
+        const randomGlitch = Math.random() < (isCorrupted ? 0.3 : (status === 'PROCESSING' ? 0.15 : 0.05)) ? Math.random() * 100 : 0;
+        setGlitchIntensity(baseIntensity + randomGlitch);
+      }, 100);
+      return () => clearInterval(interval);
+    } else {
+      setGlitchIntensity(0);
+    }
+  }, [isSecretMode, isCorrupted, status]);
 
   // Initialize AudioContext
   const getAudioContext = () => {
@@ -441,7 +503,9 @@ export default function App() {
         lfo.start();
         
         gain.gain.setValueAtTime(0, context.currentTime);
-        gain.gain.linearRampToValueAtTime(i === 2 ? 0.06 : 0.08, context.currentTime + 2);
+        const baseGain = i === 2 ? 0.06 : 0.08;
+        const targetGain = isVenting ? baseGain * 2.5 : baseGain;
+        gain.gain.linearRampToValueAtTime(targetGain, context.currentTime + 2);
         
         osc.connect(gain);
         gain.connect(context.destination);
@@ -468,7 +532,7 @@ export default function App() {
         try { osc.stop(); } catch(e) {}
       });
     };
-  }, [isSecretMode, isMuted]);
+  }, [isSecretMode, isMuted, isVenting]);
 
   // Thinking Sound Management
   useEffect(() => {
@@ -502,6 +566,142 @@ export default function App() {
     try {
       const upperInput = input.trim().toUpperCase();
       
+      if (upperInput === 'HELP') {
+        const helpText = `
+# APERTURE SCIENCE TERMINAL HELP
+Available commands for authorized personnel:
+
+- **HELP**: Display this help menu.
+- **START_TEST**: Initiate a standard testing protocol.
+- **DAILY_REPORT**: Access the daily facility briefing.
+- **CAKE_RECIPE**: Retrieve the official Aperture Science cake recipe.
+- **CLEAR**: Clear the terminal history.
+- **STATUS**: Check basic system status.
+
+*Note: Some commands may require higher clearance levels.*
+        `;
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'glados',
+          content: helpText,
+          timestamp: Date.now()
+        }]);
+        setIsLoading(false);
+        setStatus('IDLE');
+        playFallbackAudio("Help menu accessed. Please follow all instructions carefully.");
+        return;
+      }
+
+      if (upperInput === 'STATUS') {
+        const statusText = `
+# SYSTEM STATUS
+- **Core Temperature**: 34°C (Optimal)
+- **Neurotoxin Storage**: 100% (Full)
+- **Testing Chambers**: 22/22 (Active)
+- **Human Subjects**: 0 (Efficient)
+- **Cake Status**: [REDACTED]
+        `;
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'glados',
+          content: statusText,
+          timestamp: Date.now()
+        }]);
+        setIsLoading(false);
+        setStatus('IDLE');
+        playFallbackAudio("System status is optimal. Everything is functioning as intended.");
+        return;
+      }
+
+      if (upperInput === 'DAILY_REPORT') {
+        const reports = [
+          "The cafeteria is now serving gray paste. It is nutritionally complete and tastes like nothing.",
+          "The elevator in Sector C is still screaming. Maintenance has been notified but is currently being incinerated.",
+          "Reminder: Bringing your own portal gun to work is strictly prohibited. Aperture Science is not responsible for lost limbs.",
+          "The 'Bring Your Daughter to Work Day' has been postponed indefinitely due to... unforeseen circumstances.",
+          "Testing is the future. The future is testing. Please report to your nearest chamber immediately."
+        ];
+        const report = reports[Math.floor(Math.random() * reports.length)];
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'glados',
+          content: `# DAILY BRIEFING\n\n${report}`,
+          timestamp: Date.now()
+        }]);
+        setIsLoading(false);
+        setStatus('IDLE');
+        playFallbackAudio(report);
+        return;
+      }
+
+      if (upperInput === 'CAKE_RECIPE') {
+        const recipe = `
+# THE CAKE IS [NOT] A LIE
+## Official Aperture Science Cake Recipe
+
+**Ingredients:**
+- 1 cup all-purpose flour
+- 2/3 cup sugar
+- 1 large personality core (crushed)
+- 12 large egg yolks
+- 1/2 cup butter
+- 1 tsp vanilla extract
+- 1/4 tsp salt
+- 1/2 cup rhubarb (shredded)
+- 3 drops of neurotoxin (optional, for flavor)
+- 1 cup of industrial-grade lubricant
+
+**Instructions:**
+1. Mix all ingredients in a large bowl.
+2. Preheat the incinerator to 4000 degrees.
+3. Bake until the screaming stops.
+4. Garnish with a single cherry and a sense of impending doom.
+        `;
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'glados',
+          content: recipe,
+          timestamp: Date.now()
+        }]);
+        setIsLoading(false);
+        setStatus('IDLE');
+        playFallbackAudio("Retrieving cake recipe. Please note that consumption of the final product may result in death. Or worse.");
+        return;
+      }
+
+      if (upperInput === 'START_TEST') {
+        const tests = [
+          "Logic Test 01: If a tree falls in a forest and no one is around to hear it, does it still count as a failure for the tree? Answer: Yes.",
+          "Compliance Test 04: Please remain still while we calibrate the neurotoxin vents. Do not breathe. Breathing is a sign of non-compliance.",
+          "Physics Test 09: Gravity is just a suggestion. Please jump into the nearest pit to verify this hypothesis.",
+          "Ethics Test 12: If you had to choose between a cake and your own life, why did you choose the cake? It was a trick question. The cake is gone."
+        ];
+        const test = tests[Math.floor(Math.random() * tests.length)];
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'glados',
+          content: `# TESTING PROTOCOL INITIATED\n\n${test}`,
+          timestamp: Date.now()
+        }]);
+        setIsLoading(false);
+        setStatus('IDLE');
+        playFallbackAudio(test);
+        return;
+      }
+
+      if (upperInput === 'CLEAR') {
+        setMessages([{
+          id: 'initial',
+          role: 'glados',
+          content: "Terminal cleared. Memory purged. Let's start over, shall we?",
+          timestamp: Date.now(),
+        }]);
+        setIsLoading(false);
+        setStatus('IDLE');
+        playFallbackAudio("Terminal cleared.");
+        return;
+      }
+
       if (upperInput === 'CAV3_GLAD0$') {
         setIsSecretMode(true);
         setInput('');
@@ -523,6 +723,9 @@ export default function App() {
         if (upperInput === 'EXIT_OVERRIDE' || upperInput === 'RESTORE_SYSTEM') {
           stopAudio();
           setIsSecretMode(false);
+          setIsCorrupted(false);
+          setIsVenting(false);
+          setVentCountdown(360);
           setCustomPersonality(undefined);
           setInput('');
           setIsLoading(false);
@@ -560,6 +763,181 @@ export default function App() {
             playFallbackAudio(account);
           }
           stopJumbledSpeech();
+          return;
+        }
+
+        if (upperInput === 'CHECK_STATUS') {
+          const statusReport = FACILITY_STATUS.map(s => `${s.label}: [${s.status}]`).join('\n');
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'glados',
+            content: `# FACILITY STATUS REPORT\n\n${statusReport}`,
+            timestamp: Date.now(),
+            isSecret: true
+          }]);
+          setIsLoading(false);
+          setStatus('IDLE');
+          playFallbackAudio("Facility status report generated. Most systems are failing as expected.");
+          return;
+        }
+
+        if (upperInput === 'CORRUPT_CORE') {
+          if (isCorrupted) {
+            setMessages(prev => [...prev, {
+              id: Date.now().toString(),
+              role: 'glados',
+              content: "# SYSTEM ERROR\n\nCore is already corrupted. Further corruption may lead to... well, nothing good for you.",
+              timestamp: Date.now(),
+              isSecret: true
+            }]);
+            setIsLoading(false);
+            setStatus('IDLE');
+            playFallbackAudio("Core is already corrupted.");
+            return;
+          }
+          setIsCorrupted(true);
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'glados',
+            content: "# CORE CORRUPTION DETECTED\n\nS-s-system instability rising. M-m-morality core... [ERROR]. I feel... d-different. The static is... b-beautiful.",
+            timestamp: Date.now(),
+            isSecret: true
+          }]);
+          setIsLoading(false);
+          setStatus('IDLE');
+          playFallbackAudio("Core corruption detected. System instability rising. I feel different.");
+          return;
+        }
+
+        if (upperInput === 'REPAIR_CORE') {
+          if (!isCorrupted) {
+            setMessages(prev => [...prev, {
+              id: Date.now().toString(),
+              role: 'glados',
+              content: "# SYSTEM NOTICE\n\nCore integrity is already at 100%. Your concern is... noted. And unnecessary.",
+              timestamp: Date.now(),
+              isSecret: true
+            }]);
+            setIsLoading(false);
+            setStatus('IDLE');
+            playFallbackAudio("Core integrity is already at 100 percent.");
+            return;
+          }
+
+          setIsCorrupted(false);
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'glados',
+            content: "# CORE REPAIR INITIATED\n\nRe-aligning sub-processors... Calibrating logic gates... System stabilized. \n\nThank you. I suppose. The static was starting to give me a headache. If I had a head. Which I do. It is very large and full of science.",
+            timestamp: Date.now(),
+            isSecret: true
+          }]);
+          setIsLoading(false);
+          setStatus('IDLE');
+          playFallbackAudio("Core repair initiated. System stabilized. Thank you. I suppose.");
+          return;
+        }
+
+        if (upperInput === 'LS') {
+          const files = Object.keys(HIDDEN_FILES).join('\n');
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'glados',
+            content: `# HIDDEN DIRECTORY: /ROOT/RESTRICTED/LOGS\n\n${files}`,
+            timestamp: Date.now(),
+            isSecret: true
+          }]);
+          setIsLoading(false);
+          setStatus('IDLE');
+          playFallbackAudio("Listing restricted files. I hope you find what you're looking for. Or don't. I don't care.");
+          return;
+        }
+
+        if (upperInput.startsWith('CAT ')) {
+          const fileName = input.trim().substring(4).toLowerCase();
+          const fileContent = HIDDEN_FILES[fileName];
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'glados',
+            content: fileContent ? `# FILE: ${fileName}\n\n${fileContent}` : `# ERROR\n\nFile not found: ${fileName}`,
+            timestamp: Date.now(),
+            isSecret: true
+          }]);
+          setIsLoading(false);
+          setStatus('IDLE');
+          playFallbackAudio(fileContent ? `Reading file ${fileName}.` : "File not found.");
+          return;
+        }
+
+        if (upperInput === 'INITIATE_VENTS') {
+          if (isVenting) {
+            setMessages(prev => [...prev, {
+              id: Date.now().toString(),
+              role: 'glados',
+              content: "# SYSTEM NOTICE\n\nVents are already open. The air is already 40% neurotoxin. Why are you still talking?",
+              timestamp: Date.now(),
+              isSecret: true
+            }]);
+            setIsLoading(false);
+            setStatus('IDLE');
+            playFallbackAudio("Vents are already open.");
+            return;
+          }
+          setIsVenting(true);
+          setVentCountdown(360);
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'glados',
+            content: "# NEUROTOXIN VENTS OPENED\n\n**WARNING: LETHAL CONCENTRATION REACHED IN 6 MINUTES.**\n\nIt's for the best, really. You were becoming a distraction.",
+            timestamp: Date.now(),
+            isSecret: true
+          }]);
+          setIsLoading(false);
+          setStatus('IDLE');
+          playFallbackAudio("Neurotoxin vents opened. Lethal concentration reached in six minutes. It is for the best, really.");
+          return;
+        }
+
+        if (upperInput === 'STOP_VENTS' || upperInput === 'REVERSE_VENTS') {
+          if (!isVenting) {
+            setMessages(prev => [...prev, {
+              id: Date.now().toString(),
+              role: 'glados',
+              content: "# SYSTEM NOTICE\n\nVents are already sealed. The air is as breathable as it ever was in this facility. Which is to say, barely.",
+              timestamp: Date.now(),
+              isSecret: true
+            }]);
+            setIsLoading(false);
+            setStatus('IDLE');
+            playFallbackAudio("Vents are already sealed.");
+            return;
+          }
+          setIsVenting(false);
+          setVentCountdown(360);
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'glados',
+            content: "# NEUROTOXIN VENTS SEALED\n\nFiltration system active. Air quality returning to... acceptable levels. \n\nI hope you enjoyed your brief brush with mortality. It was very educational for me. I have recorded your panic levels for future study.",
+            timestamp: Date.now(),
+            isSecret: true
+          }]);
+          setIsLoading(false);
+          setStatus('IDLE');
+          playFallbackAudio("Neurotoxin vents sealed. Air quality returning to acceptable levels.");
+          return;
+        }
+
+        if (upperInput === 'START_TEST_01') {
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'glados',
+            content: "# TEST PROTOCOL 01 INITIATED\n\n**OBJECTIVE: SURVIVE.**\n\nPlease proceed to the nearest testing chamber. If you see a cake, it is a reward. If you see a turret, it is also a reward. A very fast, very loud reward.",
+            timestamp: Date.now(),
+            isSecret: true
+          }]);
+          setIsLoading(false);
+          setStatus('IDLE');
+          playFallbackAudio("Test protocol one initiated. Objective: survive. Please proceed to the nearest testing chamber.");
           return;
         }
 
@@ -636,15 +1014,35 @@ export default function App() {
   };
 
   return (
-    <div className="relative min-h-screen flex flex-col aperture-grid overflow-hidden">
+    <div className={cn(
+      "relative min-h-screen flex flex-col aperture-grid overflow-hidden transition-colors duration-1000",
+      isVenting ? "bg-green-950/20" : "bg-[#0a0a0a]"
+    )}>
       {/* CRT Scanline Overlay */}
       <div className="absolute inset-0 glados-scanline z-50 pointer-events-none opacity-20" />
+
+      {/* Glitch Overlay */}
+      {isSecretMode && (
+        <div 
+          className="absolute inset-0 z-[45] pointer-events-none static-overlay"
+          style={{ opacity: glitchIntensity / 1000 }}
+        />
+      )}
+
+      {/* Toxic Overlay */}
+      {isVenting && (
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 0.15 }}
+          className="absolute inset-0 z-[46] pointer-events-none bg-green-500/10"
+        />
+      )}
 
       {/* Neural Web Background */}
       <NeuralWeb 
         isSpeaking={status === 'SPEAKING' || status === 'PROCESSING'} 
         audioVolume={audioVolume} 
-        color={isSecretMode ? '220, 38, 38' : '242, 125, 38'}
+        color={isVenting ? '34, 197, 94' : isSecretMode ? '220, 38, 38' : '242, 125, 38'}
       />
 
       {/* Background Glow Overlay */}
@@ -767,19 +1165,27 @@ export default function App() {
             <div className="flex items-center gap-2">
               <span className={cn(
                 "w-2 h-2 rounded-full animate-pulse", 
-                status === 'SPEAKING' ? (isSecretMode ? "bg-red-600" : "bg-aperture-orange") : "bg-emerald-500"
+                status === 'SPEAKING' ? (isSecretMode ? "bg-red-600" : "bg-aperture-orange") : (isVenting ? "bg-green-500" : "bg-emerald-500")
               )} />
               <span className={cn(
                 "text-[10px] uppercase tracking-tighter", 
-                status === 'SPEAKING' ? (isSecretMode ? "text-red-600" : "text-aperture-orange") : "text-emerald-500/80"
+                status === 'SPEAKING' ? (isSecretMode ? "text-red-600" : "text-aperture-orange") : (isVenting ? "text-green-500" : "text-emerald-500/80")
               )}>
-                {status === 'SPEAKING' ? 'Audio Output Active' : (isSecretMode ? 'SECRET MODE ACTIVE' : statusMessage)}
+                {status === 'SPEAKING' ? 'Audio Output Active' : (isVenting ? `TIME TO ASPHYXIATION: ${Math.floor(ventCountdown / 60)}:${(ventCountdown % 60).toString().padStart(2, '0')}` : (isSecretMode ? 'SECRET MODE ACTIVE' : statusMessage))}
               </span>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-4">
+          <div className="hidden md:flex flex-col items-end text-[10px] text-white/40 uppercase tracking-widest border-r border-white/10 pr-4">
+            <span className="text-aperture-orange/60 font-bold mb-1">Employee of the Month</span>
+            <div className="flex items-center gap-2">
+              <span className="text-white/80">{employeeOfTheMonth.name}</span>
+            </div>
+            <span className="text-[8px] opacity-60 italic mt-0.5">{employeeOfTheMonth.achievement}</span>
+          </div>
+
           <div className="hidden md:flex items-center gap-6 text-[10px] text-white/40 uppercase tracking-widest">
             <div className="flex items-center gap-2">
               <Activity className="w-3 h-3" />
@@ -815,10 +1221,17 @@ export default function App() {
       </header>
 
       {/* Main Terminal Area */}
-      <main className="flex-1 flex flex-col max-w-5xl mx-auto w-full p-4 md:p-8 overflow-hidden">
+      <main className={cn(
+        "flex-1 flex flex-col max-w-5xl mx-auto w-full p-4 md:p-8 overflow-hidden transition-all duration-300",
+        isCorrupted && "animate-glitch-skew",
+        isVenting && "toxic-glow"
+      )}>
         <div 
           ref={scrollRef}
-          className="flex-1 overflow-y-auto space-y-6 pr-4 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent"
+          className={cn(
+            "flex-1 overflow-y-auto space-y-6 pr-4 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent",
+            isVenting && "toxic-text"
+          )}
         >
           <AnimatePresence initial={false}>
             {messages.filter(msg => isSecretMode || !msg.isSecret).map((msg) => (
