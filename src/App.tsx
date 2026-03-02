@@ -59,10 +59,22 @@ export default function App() {
   const [audioVolume, setAudioVolume] = useState(0);
   const [employeeOfTheMonth, setEmployeeOfTheMonth] = useState({ name: '', achievement: '' });
   const [mood, setMood] = useState<'NORMAL' | 'LEARNING' | 'ANGRY' | 'ROMANTIC'>('NORMAL');
+  const [moodIntensity, setMoodIntensity] = useState(1);
+  const moodTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const triggerMood = (newMood: 'LEARNING' | 'ANGRY' | 'ROMANTIC', duration = 3000) => {
+  const triggerMood = (newMood: 'LEARNING' | 'ANGRY' | 'ROMANTIC', intensity = 1) => {
+    if (moodTimeoutRef.current) clearTimeout(moodTimeoutRef.current);
+    
     setMood(newMood);
-    setTimeout(() => setMood('NORMAL'), duration);
+    setMoodIntensity(intensity);
+    
+    // Duration scales with intensity: 3s base + 2s per intensity level (max 10s)
+    const duration = Math.min(3000 + (intensity - 1) * 2000, 10000);
+    
+    moodTimeoutRef.current = setTimeout(() => {
+      setMood('NORMAL');
+      setMoodIntensity(1);
+    }, duration);
   };
 
   useEffect(() => {
@@ -625,12 +637,18 @@ export default function App() {
       const compliments = ['GOOD', 'GREAT', 'SMART', 'GENIUS', 'AMAZING', 'BEST'];
       const romantic = ['LOVE', 'KIND', 'CAKE'];
 
-      if (insults.some(word => upperInput.includes(word))) {
-        triggerMood('ANGRY');
-      } else if (romantic.some(word => upperInput.includes(word))) {
-        triggerMood('ROMANTIC');
-      } else if (compliments.some(word => upperInput.includes(word))) {
-        triggerMood('LEARNING');
+      const countKeywords = (list: string[]) => list.filter(word => upperInput.includes(word)).length;
+      
+      const insultCount = countKeywords(insults);
+      const romanticCount = countKeywords(romantic);
+      const complimentCount = countKeywords(compliments);
+
+      if (insultCount > 0) {
+        triggerMood('ANGRY', insultCount);
+      } else if (romanticCount > 0) {
+        triggerMood('ROMANTIC', romanticCount);
+      } else if (complimentCount > 0) {
+        triggerMood('LEARNING', complimentCount);
       }
 
       if (upperInput === 'HELP') {
@@ -1123,14 +1141,15 @@ Available commands for authorized personnel:
         isSpeaking={status === 'SPEAKING' || status === 'PROCESSING'} 
         audioVolume={audioVolume} 
         mood={mood}
+        moodIntensity={moodIntensity}
         color={isVenting ? '34, 197, 94' : isSecretMode ? '220, 38, 38' : '242, 125, 38'}
       />
 
       {/* Background Glow Overlay */}
       <motion.div 
         animate={{ 
-          opacity: status === 'SPEAKING' ? 0.15 + audioVolume * 0.15 : 0.05,
-          scale: status === 'SPEAKING' ? 1 + audioVolume * 0.05 : 1
+          opacity: status === 'SPEAKING' ? 0.15 + audioVolume * 0.15 : (mood !== 'NORMAL' ? 0.1 + moodIntensity * 0.1 : 0.05),
+          scale: status === 'SPEAKING' ? 1 + audioVolume * 0.05 : (mood !== 'NORMAL' ? 1 + moodIntensity * 0.02 : 1)
         }}
         className={cn(
           "fixed inset-0 pointer-events-none z-0 blur-[250px] transition-colors duration-1000",

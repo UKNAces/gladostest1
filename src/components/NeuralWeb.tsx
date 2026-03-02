@@ -15,13 +15,15 @@ interface NeuralWebProps {
   audioVolume?: number; // 0 to 1
   color?: string;
   mood?: 'NORMAL' | 'LEARNING' | 'ANGRY' | 'ROMANTIC';
+  moodIntensity?: number;
 }
 
 export const NeuralWeb: React.FC<NeuralWebProps> = ({ 
   isSpeaking, 
   audioVolume = 0,
   color = '242, 125, 38', // Default Aperture Orange (RGB)
-  mood = 'NORMAL'
+  mood = 'NORMAL',
+  moodIntensity = 1
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particles = useRef<Particle[]>([]);
@@ -33,6 +35,7 @@ export const NeuralWeb: React.FC<NeuralWebProps> = ({
   const audioVolumeRef = useRef(audioVolume);
   const colorRef = useRef(color);
   const moodRef = useRef(mood);
+  const moodIntensityRef = useRef(moodIntensity);
 
   useEffect(() => {
     isSpeakingRef.current = isSpeaking;
@@ -49,6 +52,10 @@ export const NeuralWeb: React.FC<NeuralWebProps> = ({
   useEffect(() => {
     moodRef.current = mood;
   }, [mood]);
+
+  useEffect(() => {
+    moodIntensityRef.current = moodIntensity;
+  }, [moodIntensity]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -81,6 +88,7 @@ export const NeuralWeb: React.FC<NeuralWebProps> = ({
     const currentIsSpeaking = isSpeakingRef.current;
     const currentVolume = audioVolumeRef.current;
     const currentMood = moodRef.current;
+    const currentIntensity = moodIntensityRef.current;
     
     let currentColor = colorRef.current;
     if (currentMood === 'LEARNING') currentColor = '0, 166, 255'; // Aperture Blue
@@ -88,10 +96,10 @@ export const NeuralWeb: React.FC<NeuralWebProps> = ({
     if (currentMood === 'ROMANTIC') currentColor = '255, 105, 180'; // Hot Pink
 
     // Reactivity based on audioVolume and mood
-    const moodMultiplier = currentMood !== 'NORMAL' ? 1.5 : 1;
+    const moodMultiplier = currentMood !== 'NORMAL' ? (1 + currentIntensity * 0.5) : 1;
     const speedMultiplier = currentIsSpeaking ? 2 + currentVolume * 4 : 1.01 * moodMultiplier; 
     const connectionDistance = currentIsSpeaking ? 180 + currentVolume * 70 : 130 * moodMultiplier; 
-    const opacity = currentIsSpeaking ? 0.8 + currentVolume * 0.2 : (currentMood !== 'NORMAL' ? 0.7 : 0.4);
+    const opacity = currentIsSpeaking ? 0.8 + currentVolume * 0.2 : (currentMood !== 'NORMAL' ? Math.min(0.4 + currentIntensity * 0.2, 0.9) : 0.4);
 
     // Update and draw particles
     particles.current.forEach((p, i) => {
