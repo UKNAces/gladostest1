@@ -78,7 +78,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    const names = ['Chell', 'Doug Rattmann', 'Caroline', 'Cave Johnson', 'Subject #042', 'Unknown Subject'];
+    const names = ['Chell', 'Doug Rattmann', 'Caroline', 'Cave Johnson', 'Subject #042', 'Unknown Subject', 'Stefan Kakindiros'];
     const achievements = [
       'Survived 3 days without a coffee break',
       'Successfully avoided neurotoxin for 24 hours',
@@ -1261,10 +1261,17 @@ Available commands for authorized personnel:
           </div>
           <div>
             <h1 className={cn(
-              "text-sm font-bold tracking-widest uppercase",
+              "text-sm font-bold tracking-widest uppercase flex items-baseline gap-2",
               isSecretMode ? "text-red-600" : "text-aperture-orange"
             )}>
-              {isSecretMode ? 'RESTRICTED ACCESS' : 'Assistant v1.0'}
+              {isSecretMode ? 'RESTRICTED ACCESS' : (
+                <>
+                  Assistant v1.0
+                  <span className="text-[9px] opacity-50 lowercase font-normal tracking-tight italic">
+                    (created by stefan kakindiros)
+                  </span>
+                </>
+              )}
             </h1>
             <div className="flex items-center gap-2">
               <span className={cn(
@@ -1394,6 +1401,7 @@ Available commands for authorized personnel:
           </div>
           <div className="flex gap-4">
             <span>Aperture Science Laboratories</span>
+            <span>User: Stefan Kakindiros</span>
             <span>© 1998-2026</span>
           </div>
         </div>
